@@ -1,0 +1,60 @@
+<logfile>skit.log</logfile> <!-- global parameters mandatory-->
+<pidfile>skit.pid</pidfile>
+<daemon>yes</daemon>
+<threads>1</threads>
+
+<!-- JSON managment API authentication -->
+<admin>
+	<user>some</user>
+	<password>some</password>
+</admin>
+
+<!-- server workers to load a server <name> and <listen> are mandatory--> 
+<servers>
+
+    <server>
+        <name>http</name> <!-- HTTP server is mandatory config directive -->
+        <listen>8080</listen>
+        <timeout>5</socket> <!-- seconds -->
+    </server>
+
+    <server>
+        <name>rtmp</name>
+        <listen>1935</listen>
+        <publish>allow</publish>
+        <chunkSize>4000</chunkSize>
+        <options>
+            <opt1>someopt1</opt1>
+            <opt2>someopt2</opt2>
+            <opt3>someopt1</opt3>
+        </options>
+    </server>
+
+</servers>
+    
+<streams>
+
+    <stream>
+        <name>bunny</name>
+        <location>/media/emo/20A7503C234281D8/bbb_sunflower.mp4</location>
+    </stream>
+
+    <stream> <!-- live stream from mumuDVB -->
+        <name>FoxLiveTV</name>      <!-- mandatory -->
+        <location>http://127.0.0.1:8099/</location>  <!-- mandatory -->
+        <live>yes</live> <!-- if stream is live always specify this flag -->	    
+        <source>DVBStreamHTTP</source>
+	    <filter>MPEG2TsMP4H264</filter>
+   </stream>
+
+   <stream> <!-- VOD stream movie  -->
+        <name>Movie</name>
+	<location>/home/emo/Downloads/sample.mp4</location>
+	<source></source>
+	<filter></filter>
+	<cashing>no</cashing>    <!-- additional parameter -->
+	<seekable>yes</seekable> <!-- additional parameter -->
+   </stream>
+
+</streams>
+
