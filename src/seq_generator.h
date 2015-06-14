@@ -5,6 +5,8 @@
 #ifndef SEQ_GENERATOR_H_
 #define SEQ_GENERATOR_H_
 
+namespace smkit
+{
 class sequence_id_generator
 {
 public:
@@ -24,4 +26,6 @@ private:
     unsigned long m_sequence_id;
 };
 
+}
 #endif /* SEQ_GENERATOR_H_ */
+

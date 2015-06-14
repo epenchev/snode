@@ -1,17 +1,15 @@
 CC=g++
-INC_DIR=./include
-CPPFLAGS = -I$(INC_DIR) -O0 -g3 -Wall
+INC_DIR=/usr/include/boost
+CPPFLAGS = -I$(INC_DIR) -std=c++11 -O0 -g3 -Wall 
 LDLIBS = -lpthread -lboost_system -lboost_thread #-lboost_iostreams
 EXECUTABLE=smkit
+OBJECTS = $(patsubst %.cpp, %.o, $(wildcard *.cpp))
 
 all: $(EXECUTABLE)
 
-OBJECTS = $(patsubst %.cpp, %.o, $(wildcard *.cpp))
-OBJECT_MODULES = $(wildcard ../modules/*/*.o)
-
 clean:
-	rm -f $(OBJECTS) smkit *~
+	rm -f $(OBJECTS) $(EXECUTABLE) *~
 
 $(EXECUTABLE): $(OBJECTS) $(OBJECT_MODULES)
-	$(CC) -O0 -g3 -Wall $(OBJECTS) $(OBJECT_MODULES) -o $@ $(LDLIBS)
+	$(CC) $(OBJECTS) -o $@ $(LDLIBS)
 	
