@@ -11,7 +11,7 @@
 #include <boost/thread/locks.hpp>
 #include <boost/thread/condition_variable.hpp>
 
-namespace smkit
+namespace snode
 {
 /// Thread safe queue implementation based on STL queue.
 template <typename T>

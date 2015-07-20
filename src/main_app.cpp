@@ -7,9 +7,9 @@
 int main()
 {
     // just for test
-    smkit::streams::producer_consumer_buffer<char> buf(512);
+    snode::streams::producer_consumer_buffer<char> buf(512);
     //
-    smkit::server_app& smkit = smkit::server_app::instance();
+    snode::server_app& smkit = snode::server_app::instance();
     smkit.run();
     return 0;
 }

@@ -1,16 +1,8 @@
-//
-// reg_factory.h
-// Copyright (C) 2014  Emil Penchev, Bulgaria
-
-#ifndef REG_FACTORY_TMPL_H_
-#define REG_FACTORY_TMPL_H_
-
 #include <map>
 #include <set>
 #include <string>
 
-namespace snode
-{
+#include <iostream>
 
 /// Abstract factory from template, register classes at runtime.
 template <typename T>
@@ -63,18 +55,72 @@ protected:
     }
 };
 
-template <typename Listener, typename Reg>
-struct listener_registrator
+class tcp_listener
 {
-    listener_registrator()
+public:
+    void handle_accept(int sock)
     {
-		Reg::registrate(Listener::create_listener);
+        func_(this, sock);
     }
-private: // disable copy
-    listener_registrator(const listener_registrator&);
-    void operator=(const listener_registrator&);
+
+protected:
+    typedef void (*accept_func)(tcp_listener*, int);
+
+    tcp_listener(accept_func func) : func_(func)
+    {
+    }
+
+private:
+    accept_func func_;
 };
-} // end of smkit
-#endif // REG_FACTORY_TMPL_H_
+
+class server_app
+{
+public:
+    typedef reg_factory<tcp_listener> factory_type;
+};
+
+template <typename Listener>
+class tcp_listener_impl : public tcp_listener
+{
+public:
+    tcp_listener_impl(Listener lr) : tcp_listener(&tcp_listener_impl::handle_accept_impl), listener_(lr)
+    {
+    }
+
+    static void handle_accept_impl(tcp_listener* base, int sock)
+    {
+        tcp_listener_impl<Listener>* lr(static_cast<tcp_listener_impl<Listener>*>(base));
+        lr->listener_.handle_accept(sock);
+    }
+
+    /// Factory method
+    static tcp_listener* create_object()
+    {
+        Listener lr;
+        return new tcp_listener_impl<Listener>(lr);
+    }
+
+private:
+    Listener listener_;
+};
+
+struct sample_listener
+{
+    void handle_accept(int sock)
+    {
+        std::cout << "sample impl here --- " <<  sock << "\n";
+    }
+};
+
+server_app::factory_type::registrator<tcp_listener_impl<sample_listener> > reg("sample");
+
+int main()
+{
+    tcp_listener* impl = server_app::factory_type::create_instance("sample");
+    impl->handle_accept(23);
+
+    return 0;
+}
 
 

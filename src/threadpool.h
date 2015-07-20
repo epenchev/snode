@@ -17,7 +17,7 @@
 #include <boost/thread/locks.hpp>
 #include "synchronised_queue.h"
 
-namespace smkit
+namespace snode
 {
 
 typedef boost::thread::id thread_id_t;

@@ -5,7 +5,7 @@
 #ifndef SEQ_GENERATOR_H_
 #define SEQ_GENERATOR_H_
 
-namespace smkit
+namespace snode
 {
 class sequence_id_generator
 {

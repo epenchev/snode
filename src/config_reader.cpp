@@ -8,38 +8,36 @@
 #include <string>
 #include <exception>
 
-namespace smkit
+namespace snode
 {
 
-void smkit_config::init(const std::string& filepath)
+void app_config::init(const std::string& filepath)
 {
     try
     {
-        read_xml(filepath, m_ptree);
-    }
-    catch (std::exception &ex)
-    {
+        read_xml(filepath, ptree_);
+    } catch (std::exception &ex) {
         throw config_reader_error(ex.what());
     }
 }
 
-unsigned smkit_config::io_threads()
+unsigned app_config::io_threads()
 {
     // don't consider default value as error
-    return m_ptree.get("io_threads", 1);
+    return ptree_.get("io_threads", 1);
 }
 
-unsigned smkit_config::max_process_threads()
+unsigned app_config::process_threads()
 {
     // don't consider default value as error
-    return m_ptree.get("max_threads", 1);
+    return ptree_.get("max_threads", 1);
 }
 
-bool smkit_config::daemonize()
+bool app_config::daemonize()
 {
     try
     {
-        std::string val = m_ptree.get<std::string>("daemon");
+        std::string val = ptree_.get<std::string>("daemon");
         if (!val.empty())
         {
             if (val.compare("yes"))
@@ -47,36 +45,34 @@ bool smkit_config::daemonize()
             else
                 return false;
         }
-    }
-    catch (std::exception& ex)
-    {
+    } catch (std::exception& ex) {
         // do nothing
     }
 
     return false;
 }
 
-std::string smkit_config::logfile()
+std::string app_config::logfile()
 {
-    return m_ptree.get("logfile", "");
+    return ptree_.get("logfile", "");
 }
 
-std::string smkit_config::pidfile()
+std::string app_config::pidfile()
 {
-    return m_ptree.get("pidfile", "");
+    return ptree_.get("pidfile", "");
 }
 
-std::string smkit_config::admin_username()
+std::string app_config::username()
 {
-    return m_ptree.get("admin.username", "");
+    return ptree_.get("admin.username", "");
 }
 
-std::string smkit_config::admin_password()
+std::string app_config::password()
 {
-    return m_ptree.get("admin.password", "");
+    return ptree_.get("admin.password", "");
 }
 
-static void _get_options(boost::property_tree::ptree& ptree_reader, options_map_t& out_options)
+static void get_options(boost::property_tree::ptree& ptree_reader, options_map_t& out_options)
 {
     boost::property_tree::ptree::const_assoc_iterator it_assoc = ptree_reader.find("options");
     if (it_assoc != ptree_reader.not_found())
@@ -90,62 +86,58 @@ static void _get_options(boost::property_tree::ptree& ptree_reader, options_map_
     }
 }
 
-std::list<stream_config>& smkit_config::streams()
+std::list<media_config>& app_config::streams()
 {
-    if (!m_streams.empty())
-    {
-        return m_streams;
-    }
+    if (!streams_.empty())
+        return streams_;
 
     try
     {
-        boost::property_tree::ptree::iterator iter = m_ptree.get_child("streams").begin();
-        while (iter != m_ptree.get_child("streams").end())
+        boost::property_tree::ptree::iterator iter = ptree_.get_child("streams").begin();
+        while (iter != ptree_.get_child("streams").end())
         {
-            stream_config stream;
+            media_config stream;
             std::string val = iter->second.get<std::string>("live");
             if (!val.empty())
             {
                 if (val.compare("yes"))
-                    stream.is_live = true;
-                else
-                    stream.is_live = false;
-            }
-            else
-            {
-                stream.is_live = false;
+                {
+                    // value is not interesting as long as the option is set
+                    stream.options["yes"] = "true";
+                }
             }
 
             stream.location = iter->second.get<std::string>("location");
-            stream.source_classname = iter->second.get<std::string>("class_source", "");
-            stream.filter_classname = iter->second.get<std::string>("filter_source", "");
-            _get_options(iter->second, stream.options);
-            m_streams.push_back(stream);
+            std::string class_name = iter->second.get<std::string>("class_source", "");
+            if (!class_name.empty())
+                stream.options["source"] = class_name;
+
+            class_name = iter->second.get<std::string>("filter_source", "");
+            if (!class_name.empty())
+                stream.options["filter"] = class_name;
+
+            get_options(iter->second, stream.options);
+            streams_.push_back(stream);
             ++iter;
         }
-    }
-    catch (std::exception& ex)
-    {
+    } catch (std::exception& ex) {
         throw config_reader_error(ex.what());
     }
 
-    return m_streams;
+    return streams_;
 }
 
-std::list<server_handler_config>& smkit_config::server_handlers()
+std::list<service_config>& app_config::servers()
 {
-    if (!m_servers.empty())
-    {
-        return m_servers;
-    }
+    if (!servers_.empty())
+        return servers_;
 
-    // load list
     try
     {
-        boost::property_tree::ptree::iterator iter = m_ptree.get_child("servers").begin();
-        while (iter != m_ptree.get_child("servers").end())
+        boost::property_tree::ptree::iterator iter = ptree_.get_child("servers").begin();
+        while (iter != ptree_.get_child("servers").end())
         {
-            server_handler_config server;
+            service_config server;
             server.name = iter->second.get<std::string>("name");
             auto listen = iter->second.get<std::string>("listen");
             auto pos = listen.find_first_of(":");
@@ -160,17 +152,15 @@ std::list<server_handler_config>& smkit_config::server_handlers()
                 server.listen_port = iter->second.get<unsigned>("listen");
             }
 
-            _get_options(iter->second, server.options);
-            m_servers.push_back(server);
+            get_options(iter->second, server.options);
+            servers_.push_back(server);
             ++iter;
         }
-    }
-    catch (std::exception& ex)
-    {
+    } catch (std::exception& ex) {
         throw config_reader_error(ex.what());
     }
 
-    return m_servers;
+    return servers_;
 }
 
 }

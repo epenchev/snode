@@ -14,7 +14,7 @@
 #include "server_app.h"
 #include "seq_generator.h"
 
-namespace smkit
+namespace snode
 {
 /// Schedule an execution task for I/O event processing. Task is executed in a given I/O event loop thread specified by id.
 /// Don't schedule any heavy processing tasks that require lots of CPU time because I/O may be delayed, use async_processing_task instead.

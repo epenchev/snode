@@ -16,40 +16,71 @@
 #include "reg_factory.h"
 #include "config_reader.h"
 
-namespace smkit
+namespace snode
 {
 
 typedef boost::system::error_code error_code_t;
 typedef boost::shared_ptr<boost::asio::ip::tcp::socket> tcp_socket_ptr;
 typedef boost::shared_ptr<boost::asio::ip::tcp::acceptor> tcp_acceptor_ptr;
 
-class server_handler
+/// Represents a server instance handling incoming TCP connection via socket object.
+class tcp_listener
 {
 public:
-    virtual ~server_handler() {}
+    void handle_accept(tcp_socket_ptr sock)
+    {
+        func_(this, sock);
+    }
 
-    /// Factory creator method, to be overridden by subclasses.
-    static server_handler* create_object() { return NULL; }
-    virtual void init(unsigned short port, thread_id_t id) = 0;
-    virtual unsigned short port() = 0;
-    virtual thread_id_t thread_id() = 0;
+protected:
+    typedef void (*accept_func)(tcp_listener*, tcp_socket_ptr);
+    tcp_listener(accept_func func) : func_(func)
+    {
+    }
 
-    /// Custom hook method for accepting incoming TCP connections, implementation is in subclasses.
-    /// Custom server_handlers receive a connected TCP socket object ready for I/O.
-    virtual void accept_connection(tcp_socket_ptr socket) = 0;
+private:
+    accept_func func_;
 };
 
+/// A template class that servers as a implementation wrapper for a tcp_listener.
+/// Template type Listener is the actual implementation for a tcp_listener.
+template <typename Listener>
+class tcp_listener_impl : public tcp_listener
+{
+public:
+    /// Default constructor , (lr) is the listener to be called when a new TCP connection/socket is accepted.
+    tcp_listener_impl(Listener lr) : tcp_listener(&tcp_listener_impl::handle_accept_impl), listener_(lr)
+    {
+    }
+
+    static void handle_accept_impl(tcp_listener* base, tcp_socket_ptr sock)
+    {
+        tcp_listener_impl<Listener>* lr(static_cast<tcp_listener_impl<Listener>*>(base));
+        lr->listener_.handle_accept(sock);
+    }
+
+    /// Factory method
+    static tcp_listener* create_object()
+    {
+        Listener lr;
+        return new tcp_listener_impl<Listener>(lr);
+    }
+
+private:
+    Listener listener_;
+};
 
 /// Main system class, does complete system initialization and provides access to all core objects.
 class server_app
 {
 private:
-    std::vector<server_handler*>            m_server_handlers;      /// Protocol handlers
-    io_event_threadpool*                    m_event_threadpool;     /// handling all I/O and event messaging tasks.
-    sys_processor_threadpool*               m_processor_threadpool; /// handling all heavy computing tasks.
-    std::list<tcp_acceptor_ptr>             m_tcp_acceptors;        /// socket acceptors listening for incoming connections.
-    smkit_config                            m_sysconfig;            /// master configuration.
-    sys_processor_threadpool::task_queue_t  m_task_queue;
+    unsigned                                current_thread_idx_;    /// holds index of the current thread to be used to schedule I/O
+    io_event_threadpool*                    ev_threadpool_;         /// handling all I/O and event messaging tasks.
+    sys_processor_threadpool*               sys_threadpool_;        /// handling all heavy computing tasks.
+    std::list<tcp_acceptor_ptr>             acceptors_;             /// socket acceptors listening for incoming connections.
+    app_config                              config_;                /// master configuration.
+    sys_processor_threadpool::task_queue_t  task_queue_;
+    std::map<thread_id_t, std::map<unsigned short, std::pair<tcp_listener*, std::string>>> listeners_;   /// threads -> tcp_listeners map association
 
 public:
     /// server_controller is a singleton, can be accessed only with this method.
@@ -60,7 +91,7 @@ public:
     }
 
     /// Factory for registering all the server handler classes.
-    typedef reg_factory<server_handler> server_handler_factory_t;
+    typedef reg_factory<tcp_listener> service_factory;
 
     /// Main entry point of the system, read configuration and runs the system.
     void run();
@@ -69,18 +100,18 @@ public:
 
 private:
     /// internal initialization structure
-    void _init();
+    void init();
 
     /// boost acceptor handler callback function
-    void _handle_accept(tcp_socket_ptr socket, const error_code_t& err);
+    void accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor, const error_code_t& err);
 
-    server_app() : m_event_threadpool(NULL), m_processor_threadpool(NULL)
+    server_app() : current_thread_idx_(0), ev_threadpool_(NULL), sys_threadpool_(NULL)
     {
     }
 
     ~server_app()
     {
-        delete m_event_threadpool;
+        delete ev_threadpool_;
     }
 };
 

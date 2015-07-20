@@ -15,7 +15,7 @@
 
 #include "async_task.h"
 
-namespace smkit
+namespace snode
 {
 /// Library for asynchronous streams.
 namespace streams
@@ -77,9 +77,10 @@ namespace streams
     class async_streambuf_operation
     {
     public:
-        typedef smkit::streams::char_traits<CharType> traits;
+        typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
 
+#if 0
         void complete(std::size_t size)
         {
             func_size_(this, size);
@@ -89,6 +90,7 @@ namespace streams
         {
             func_ch_(this, ch);
         }
+#endif
 
     protected:
         typedef void (*func_ch_type)(async_streambuf_operation*, int_type);
@@ -116,7 +118,7 @@ namespace streams
     class async_streambuf
     {
     public:
-        typedef smkit::streams::char_traits<CharType> traits;
+        typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
         typedef typename traits::pos_type pos_type;
         typedef typename traits::off_type off_type;
@@ -506,7 +508,7 @@ namespace streams
     public:
         typedef async_streambuf_operation<CharType> operation_base;
         typedef async_stream_handler<CharType, Handler> astream_handler;
-        typedef smkit::streams::char_traits<CharType> traits;
+        typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
 
         async_stream_handler(Handler h) : operation_base(&async_stream_handler::do_complete_ch, &async_stream_handler::do_complete_size),
@@ -534,19 +536,20 @@ namespace streams
     class async_ostream
     {
     public:
-        typedef ::smkit::streams::char_traits<CharType> traits;
+        typedef ::snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
         typedef typename traits::pos_type pos_type;
         typedef typename traits::off_type off_type;
-        typedef typename ::smkit::streams::async_streambuf<CharType, Impl> streambuf_type;
+        typedef typename ::snode::streams::async_streambuf<CharType, Impl> streambuf_type;
 
         /// Copy constructor
-        async_ostream(const async_ostream<CharType, Impl>& other) : buffer_(other.buffer_) {}
+        async_ostream(const async_ostream<CharType, Impl>& other) : buffer_(other.buffer_), requests_(other.requests_) {}
 
         /// Assignment operator
         async_ostream& operator =(const async_ostream<CharType, Impl>& other)
         {
             buffer_ = other.buffer_;
+            requests_ = other.requests_;
             return *this;
         }
 
@@ -783,7 +786,7 @@ namespace streams
     class async_istream
     {
     public:
-        typedef ::smkit::streams::char_traits<CharType> traits;
+        typedef ::snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
         typedef typename traits::pos_type pos_type;
         typedef typename traits::off_type off_type;
@@ -988,7 +991,7 @@ namespace streams
         bool is_open() const { return is_valid() && buffer_->can_read(); }
 
         /// Get the underlying stream buffer.
-        smkit::streams::async_streambuf<CharType, Impl>& streambuf() const
+        snode::streams::async_streambuf<CharType, Impl>& streambuf() const
         {
             return *buffer_;
         }

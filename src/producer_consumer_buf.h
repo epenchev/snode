@@ -14,7 +14,7 @@
 #include "async_streams.h"
 #include "async_task.h"
 
-namespace smkit
+namespace snode
 {
 /// Library for asynchronous streams.
 namespace streams

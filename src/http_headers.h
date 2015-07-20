@@ -7,163 +7,162 @@
 
 #include <map>
 #include <memory>
+#include <utility>
 #include <cstring>
 #include <string>
 #include <vector>
 #include <sstream>
 #include <typeinfo>
 
-namespace smkit
+#include "utils.h"
+
+namespace snode
 {
 namespace http
 {
-
-struct util_conversions
-{
-    template <typename Source>
-    std::string print_string(const Source& val)
-    {
-        std::ostringstream oss;
-        oss << val;
-        if (oss.bad())
-            throw std::bad_cast();
-
-        return oss.str();
-    }
-};
 
 /// Represents HTTP headers, acts as a map.
 class http_headers
 {
 public:
-    /// Function object to perform comparison of strings
-    struct m_cmp_func
+
+    /// Function object to perform case insensitive comparison of wstrings.
+    struct case_insensitive_cmp_
     {
-        bool operator()(const std::string &str1, const std::string &str2) const
+        bool operator()(const std::string& str1, const std::string& str2) const
         {
-            return strcmp(str1.c_str(), str2.c_str()) < 0;
+#ifdef _WIN32
+            return _wcsicmp(str1.c_str(), str2.c_str()) < 0;
+#else
+            return utility::cmp::icmp(str1, str2) < 0;
+#endif
         }
     };
 
-    typedef std::map<std::string, std::string, m_cmp_func> headers_map;
-    typedef std::map<std::string, std::string, m_cmp_func>::key_type key_type;
-    typedef std::map<std::string, std::string, m_cmp_func>::key_compare key_compare;
-    typedef std::map<std::string, std::string, m_cmp_func>::size_type size_type;
-    typedef std::map<std::string, std::string, m_cmp_func>::iterator iterator;
-    typedef std::map<std::string, std::string, m_cmp_func>::const_iterator const_iterator;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_> headers_map;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_>::key_type key_type;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_>::key_compare key_compare;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_>::size_type size_type;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_>::iterator iterator;
+    typedef std::map<std::string, std::string, case_insensitive_cmp_>::const_iterator const_iterator;
 
-    http_headers()
-    {
-    }
+    /// Constructs an empty set of HTTP headers.
+    http_headers() {}
 
-    http_headers(const http_headers &other) : m_headers(other.m_headers)
-    {
-    }
+    /// Copy constructor.
+    http_headers(const http_headers &other) : headers_(other.headers_) {}
 
+    /// Assignment operator.
     http_headers &operator=(const http_headers &other)
     {
         if (this != &other)
-            m_headers = other.m_headers;
+            headers_ = other.headers_;
         return *this;
     }
 
+    /// Move constructor.
+    http_headers(http_headers &&other) : headers_(std::move(other.headers_)) {}
+
+    /// Move assignment operator.
+    http_headers &operator=(http_headers &&other)
+    {
+        if(this != &other)
+            headers_ = std::move(other.headers_);
+        return *this;
+    }
+
+
+    /// Adds a header field with name (name) and value of the header (value).
+    /// If the header field exists, the value will be combined as comma separated string.
     template<typename T>
     void add(const key_type& name, const T& value)
     {
         if (has(name))
-            m_headers[name] =  m_headers[name].append(", " /*+ util_conversions::print_string(value)*/);
+            headers_[name] =  headers_[name].append(", " + utility::conversions::print_string(value));
         else
-        {
-            // m_headers[name] = util_conversions::print_string(value);
-        }
+            headers_[name] = utility::conversions::print_string(value);
     }
-
 
     /// Removes a header field.
     void remove(const key_type& name)
     {
-        m_headers.erase(name);
+        headers_.erase(name);
     }
 
     /// Removes all elements from the headers.
     void clear()
     {
-        m_headers.clear();
+        headers_.clear();
     }
 
     /// Checks if there is a header with the given key.
     /// returns true if there is a header with the given name, false otherwise.
     bool has(const key_type& name) const
     {
-        return m_headers.find(name) != m_headers.end();
+        return headers_.find(name) != headers_.end();
     }
 
     /// Returns the number of header fields.
     size_type size() const
     {
-        return m_headers.size();
+        return headers_.size();
     }
 
     /// Tests to see if there are any header fields.
     /// returns true if there are no headers, false otherwise.
     bool empty() const
     {
-        return m_headers.empty();
+        return headers_.empty();
     }
 
     /// Returns a reference to header field with given name, if there is no header field one is inserted.
     std::string& operator[](const key_type &name)
     {
-        return m_headers[name];
+        return headers_[name];
     }
-
 
     /// Checks if a header field exists with given name and returns an iterator if found. Otherwise
     /// and iterator to end is returned.
     /// returns an iterator to where the HTTP header is found.
     iterator find(const key_type& name)
     {
-        return m_headers.find(name);
+        return headers_.find(name);
     }
 
     const_iterator find(const key_type& name) const
     {
-        return m_headers.find(name);
+        return headers_.find(name);
     }
 
     /// Attempts to match a header field with the given name using the '>>' operator.
     /// returns true if header field was found and successfully stored in value parameter.
     template<typename T>
-    bool match(const key_type &name, T &value) const
+    bool match(const key_type& name, T& value) const
     {
-        headers_map::const_iterator iter = m_headers.find(name);
-        if (iter != m_headers.end())
+        headers_map::const_iterator iter = headers_.find(name);
+        if (iter != headers_.end())
         {
             // Check to see if doesn't have a value.
             if (iter->second.empty())
             {
-                /* bind_impl(iter->second, value); */
+                bind_impl(iter->second, value);
                 return true;
             }
-            return true; /* bind_impl(iter->second, value); */
+            return bind_impl(iter->second, value);
         }
         else
+        {
             return false;
+        }
     }
 
-    /// <summary>
-    /// Returns an iterator referring to the first header field.
-    /// </summary>
-    /// <returns>An iterator to the beginning of the HTTP headers</returns>
-    iterator begin() { return m_headers.begin(); }
-    const_iterator begin() const { return m_headers.begin(); }
+    /// Returns an iterator referring to the first header field (beginning of the HTTP headers).
+    iterator begin() { return headers_.begin(); }
+    const_iterator begin() const { return headers_.begin(); }
 
-    /// <summary>
     /// Returns an iterator referring to the past-the-end header field.
-    /// </summary>
-    /// <returns>An iterator to the element past the end of the HTTP headers.</returns>
-    iterator end() { return m_headers.end(); }
-    const_iterator end() const { return m_headers.end(); }
+    iterator end() { return headers_.end(); }
+    const_iterator end() const { return headers_.end(); }
 
     /// Gets the content length of the message.
     std::size_t content_length() const;
@@ -187,14 +186,14 @@ public:
     std::string date() const;
 
     /// Sets the date header of the message.
-    //void set_date(const utility::datetime& date);
+    void set_date();
 
 private:
 
     template<typename T>
-    bool bind_impl(/*const key_type& text*/std::string& text, T& ref) const
+    bool bind_impl(const key_type& text, T& ref) const
     {
-        std::istream iss(text);
+        std::istringstream iss(text);
         iss.imbue(std::locale::classic());
         iss >> ref;
         if (iss.fail() || !iss.eof())
@@ -210,7 +209,7 @@ private:
     }
 
     // Headers are stored in a map with custom compare func object.
-    std::map<std::string, std::string, m_cmp_func> m_headers;
+    std::map<std::string, std::string, case_insensitive_cmp_> headers_;
 };
 
 }}

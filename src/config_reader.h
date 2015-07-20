@@ -10,10 +10,10 @@
 #include <list>
 #include <boost/property_tree/ptree.hpp>
 
-namespace smkit
+namespace snode
 {
 
-typedef std::map<std::string,std::string> options_map_t;
+typedef std::map<std::string, std::string> options_map_t;
 ///  General error class used for throwing exceptions from xml_reader.
 class config_reader_error : public std::runtime_error
 {
@@ -23,44 +23,61 @@ public:
     ~config_reader_error() throw() {}
 };
 
-struct server_handler_config
+/// Configuration parameters for a given streaming/network service.
+struct service_config
 {
-    std::string name;
-    std::string host;
-    unsigned    listen_port;
-    options_map_t options;
+    std::string     name;
+    std::string     host;
+    unsigned        listen_port;
+    options_map_t   options;
 };
 
-struct stream_config
+/// Media stream configuration
+struct media_config
 {
-    bool is_live;
-    std::string name;
-    std::string location;
-    std::string source_classname;
-    std::string filter_classname;
-    options_map_t options;
+    std::string     name;
+    std::string     location;
+    options_map_t   options;
 };
 
-class smkit_config
+/// Main application configuration.
+class app_config
 {
 private:
-    boost::property_tree::ptree m_ptree;
-    std::list<stream_config> m_streams;
-    std::list<server_handler_config> m_servers;
+    boost::property_tree::ptree ptree_;
+    std::list<media_config> streams_;
+    std::list<service_config> servers_;
 public:
 
     /// Read configuration from file
-    void        init(const std::string& filename);
+    void init(const std::string& filename);
 
-    bool        daemonize();
-    unsigned    io_threads();
-    unsigned    max_process_threads();
+    /// Get run as a background service option.
+    bool daemonize();
+
+    /// Get I/O event threads count.
+    unsigned io_threads();
+
+    /// Get processing threads count.
+    unsigned process_threads();
+
+    /// Get log file pathname
     std::string logfile();
+
+    /// Get pid file if set (only Unix)
     std::string pidfile();
-    std::string admin_username();
-    std::string admin_password();
-    std::list<stream_config>& streams();
-    std::list<server_handler_config>& server_handlers();
+
+    /// Get the user name if set.
+    std::string username();
+
+    /// Get the password if set.
+    std::string password();
+
+    /// Media streams configuration.
+    std::list<media_config>& streams();
+
+    /// Get the list of all service configurations.
+    std::list<service_config>& servers();
 };
 
 }
