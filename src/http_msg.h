@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <exception>
 #include <stdexcept>
+#include <functional>
 
 #include "http_headers.h"
 #include "async_streams.h"
@@ -92,8 +93,9 @@ public:
 class http_msg_base
 {
 public:
-    typedef typename streams::async_istream<uint8_t, streams::producer_consumer_buffer<uint8_t>> istream_type;
-    typedef typename streams::async_ostream<uint8_t, streams::producer_consumer_buffer<uint8_t>> ostream_type;
+    typedef streams::async_streambuf<uint8_t, streams::producer_consumer_buffer<uint8_t>> streambuf_type;
+    typedef typename streambuf_type::istream_type istream_type;
+    typedef typename streambuf_type::ostream_type ostream_type;
 
     http_msg_base() : data_available_(0) {}
 
@@ -106,13 +108,26 @@ public:
     }
 
     /// Generates a string representation of the message, including the body when possible.
-    virtual std::string to_string() const;
+    virtual std::string to_string();
+
+    /// Extract a string from the body.
+    std::string extract_string(bool ignore_content_type = false);
+
+    /* json::value extract_json(bool ignore_content_type = false); */
+    std::vector<unsigned char> extract_vector();
+
+    /// Helper function for extract functions. Parses the Content-Type header and check to make sure it matches,
+    /// throws an exception if not.
+    /// (ignore_content_type) If true ignores the Content-Type header value.
+    /// (check_content_type) Function to verify additional information on Content-Type.
+    /// returns a string containing the charset, an empty string if no Content-Type header is empty.
+    std::string parse_and_check_content_type(bool ignore_content_type, const std::function<bool(const std::string&)> &check_content_type);
 
     /// Sets the body of the message to a textual string and set the "Content-Type" header.
-    void set_body(istream_type& instream, const std::string& contentType);
+    void set_body(streambuf_type::istream_type& instream, const std::string& contentType);
 
     /// Sets the body of the message to a textual string and set the "Content-Type" header.
-    void set_body(istream_type& instream, std::size_t length, const std::string& contentType);
+    void set_body(streambuf_type::istream_type& instream, std::size_t length, const std::string& contentType);
 
     /// Determine the content length returns
     /// size_t::max if there is content with unknown length (transfer_encoding:chunked)
@@ -125,16 +140,16 @@ public:
     void complete(std::size_t body_size);
 
     /// Set the stream through which the message body could be read
-    void set_instream(const http_msg_base::istream_type& instream)  { /* instream_ = instream; */ }
-
-    /// Get the stream through which the message body could be read
-    istream_type& instream() { /* return instream_; */ }
+    void set_instream(const istream_type& instream)  { instream_ = instream; }
 
     /// Set the stream through which the message body could be written
-    void set_outstream(http_msg_base::ostream_type& outstream, bool is_default)  { /* outstream_ = outstream; */ }
+    void set_outstream(const ostream_type& outstream)  { outstream_ = outstream; }
 
     /// Get the stream through which the message body could be written
-    ostream_type& outstream() { /* return outstream_;*/ }
+    ostream_type& outstream() { return outstream_; }
+
+    /// Get the stream through which the message body could be read
+    istream_type& instream() { return instream_; }
 
     std::size_t get_data_available() const { return data_available_; }
 
@@ -143,7 +158,6 @@ public:
 
 protected:
 
-
     /// Stream to read the message body.
     /// By default this is an invalid stream. The user could set the instream on
     /// a request by calling set_request_stream(...). This would also be set when
@@ -151,63 +165,92 @@ protected:
     /// Even in the presense of msg body this stream could be invalid. An example
     /// would be when the user sets an ostream for the response. With that API the
     /// user does not provide the ability to read the msg body.
-    /// Thus m_instream is valid when there is a msg body and it can actually be read
+    /// Thus instream_ is valid when there is a msg body and it can actually be read
+    streambuf_type::istream_type instream_;
 
     /// stream to write the msg body
     /// By default this is an invalid stream. The user could set this on the response
     /// (for http_client). In all the other cases we would construct one to transfer
     /// the data from the network into the message body.
-    /* concurrency::streams::ostream m_outStream; */
+    streambuf_type::ostream_type outstream_;
 
-#if 0
-    istream_type instream_;
-    ostream_type outstream_;
-#endif
     http_headers headers_;
 
     std::size_t data_available_;
 };
 
+
+/// Internal representation of an HTTP response.
+class http_response_impl : public http::http_msg_base
+{
+public:
+    http_response_impl() : status_code_((std::numeric_limits<uint16_t>::max)()) { }
+
+    http_response_impl(http::status_code code) : status_code_(code) {}
+
+    http::status_code status_code() const { return status_code_; }
+
+    void set_status_code(http::status_code code) { status_code_ = code; }
+
+    const http::reason_phrase& reason_phrase() const { return reason_phrase_; }
+
+    void set_reason_phrase(const http::reason_phrase &reason) { reason_phrase_ = reason; }
+
+    std::string to_string() const;
+
+private:
+
+    http::status_code status_code_;
+    http::reason_phrase reason_phrase_;
+};
+
+
 /// Represents an HTTP response.
-class http_response : public http::http_msg_base
+class http_response
 {
 public:
 
     /// Constructs a response with an empty status code, no headers, and no body.
-    http_response() : status_code_(0) {}
+    http_response() : impl_(std::make_shared<http::http_response_impl>()) { }
 
     /// Constructs a response with given status code, no headers, and no body.
-    http_response(http::status_code code) : status_code_(code) {}
+    http_response(http::status_code code) : impl_(std::make_shared<http::http_response_impl>(code)) { }
 
     /// Gets the status code of the response message.
-    http::status_code status_code() const
-    {
-        return status_code_;
-    }
+    http::status_code status_code() const { return impl_->status_code(); }
 
     /// Sets the status code of the response message. This will overwrite any previously set status code.
-    void set_status_code(http::status_code code)
-    {
-        status_code_ = code;
-    }
+    void set_status_code(http::status_code code) { impl_->set_status_code(code); }
 
     /// Gets the reason phrase of the response message.
     /// If no reason phrase is set it will default to the standard one corresponding to the status code.
-    const http::reason_phrase& reason_phrase() const
-    {
-        return reason_phrase_;
-    }
+    const http::reason_phrase& reason_phrase() const { return impl_->reason_phrase(); }
 
     /// Sets the reason phrase of the response message.
     /// If no reason phrase is set it will default to the standard one corresponding to the status code.
-    void set_reason_phrase(const http::reason_phrase &reason)
-    {
-        reason_phrase_ = reason;
-    }
+    void set_reason_phrase(const http::reason_phrase &reason) { impl_->set_reason_phrase(reason); }
+
+    /// Gets the headers of the response message.
+    /// <returns>HTTP headers for this response.</returns>
+    /// Use the http_headers::add() Method to fill in desired headers.
+    http_headers &headers() { return impl_->headers(); }
+
+    /// Gets a const reference to the headers of the response message.
+    const http_headers &headers() const { return impl_->headers(); }
+
+    /// Generates a string representation of the message, including the body when possible.
+    /// Mainly this should be used for debugging purposes as it has to copy the
+    /// message body and doesn't have excellent performance.
+
+    /// <returns>A string representation of this HTTP request.</returns>
+    /// <remarks>Note this function is synchronous and doesn't wait for the
+    /// entire message body to arrive. If the message body has arrived by the time this
+    /// function is called and it is has a textual Content-Type it will be included.
+    /// Otherwise just the headers will be present.</remarks>
+    std::string to_string() const { return impl_->to_string(); }
 
 private:
-    http::status_code status_code_;
-    http::reason_phrase reason_phrase_;
+    std::shared_ptr<http::http_response_impl> impl_;
 };
 
 
@@ -257,7 +300,6 @@ public:
     /// (status) Response status code.
     /// (body_data) string containing the text to use in the response body.
     /// (content_type) Content type of the body.
-
     void reply(http::status_code status, const std::string& body_data, const std::string &content_type = "text/plain; charset=utf-8")
     {
         http_response response(status);

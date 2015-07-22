@@ -41,7 +41,9 @@ void server_app::init()
     config_.init("conf.xml");
     ev_threadpool_ = new io_event_threadpool(config_.io_threads());
     if (!config_.servers().size())
+    {
         throw std::logic_error("No handlers set in configuration");
+    }
 
     for (auto it = config_.servers().begin(); it != config_.servers().end(); it++)
     {
@@ -120,5 +122,4 @@ io_event_threadpool& server_app::event_threadpool()
     return *ev_threadpool_;
 }
 
-
-}
+} // snode

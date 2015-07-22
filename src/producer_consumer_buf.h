@@ -252,6 +252,16 @@ namespace streams
             async_event_task::connect(handler, static_cast<int_type>(traits::eof()));
         }
 
+        void close_read_impl()
+        {
+            // todo implementation
+        }
+
+        void close_write_impl()
+        {
+            // todo implementation
+        }
+
     private:
 
         /// Represents a memory block
@@ -497,26 +507,26 @@ namespace streams
         {
             assert(can_satisfy(count));
 
-            size_t totalread = 0;
+            size_t totalr = 0;
 
             for (auto iter = begin(blocks_); iter != std::end(blocks_); ++iter)
             {
                 auto block = *iter;
-                auto read_from_block = block->read(ptr + read, count - totalread, advance);
+                auto read_from_block = block->read(ptr + totalr, count - totalr, advance);
 
-                totalread += read_from_block;
+                totalr += read_from_block;
 
-                assert(count >= read);
-                if (totalread == count)
+                assert(count >= totalr);
+                if (totalr == count)
                     break;
             }
 
             if (advance)
             {
-                update_read_head(totalread);
+                update_read_head(totalr);
             }
 
-            return totalread;
+            return totalr;
         }
 
         /// Updates the read head by the specified offset

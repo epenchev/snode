@@ -115,7 +115,7 @@ namespace streams
     /// CharType is the data type of the basic element of the async_streambuf
     /// and Impl is the actual buffer internal implementation.
     template<typename CharType, typename Impl>
-    class async_streambuf
+    class async_streambuf : std::enable_shared_from_this<async_streambuf<CharType, Impl>>
     {
     public:
         typedef snode::streams::char_traits<CharType> traits;
@@ -135,19 +135,19 @@ namespace streams
         }
 
         /// Constructs an input stream head for this stream buffer.
-        istream_type create_istream() const
+        istream_type create_istream()
         {
             if (!can_read())
                 throw std::runtime_error("stream buffer not set up for input of data");
-            return istream_type(*this);
+            return istream_type(this->shared_from_this());
         }
 
         /// Constructs an output stream for this stream buffer.
-        ostream_type create_ostream() const
+        ostream_type create_ostream()
         {
             if (!can_write())
                 throw std::runtime_error("stream buffer not set up for output of data");
-            return ostream_type(*this);
+            return ostream_type(this->shared_from_this());
         }
 
         /// can_seek() is used to determine whether a stream buffer supports seeking.
@@ -194,7 +194,7 @@ namespace streams
 
         /// For any input stream, returns the number of characters that are immediately available to be consumed without blocking
         /// May be used in conjunction with sbumpc() method to read data without using async tasks.
-        size_t in_avail() const
+        size_t in_avail()
         {
             return get_impl()->in_avail_impl();
         }
@@ -203,7 +203,7 @@ namespace streams
         /// Returns the current position. EOF if the operation fails.
         /// Some streams may have separate write and read cursors.
         /// For such streams, the direction parameter defines whether to move the read or the write cursor.</remarks>
-        pos_type getpos(std::ios_base::openmode direction) const
+        pos_type getpos(std::ios_base::openmode direction) //const
         {
             return get_impl()->getpos_impl();
         }
@@ -542,8 +542,11 @@ namespace streams
         typedef typename traits::off_type off_type;
         typedef typename ::snode::streams::async_streambuf<CharType, Impl> streambuf_type;
 
+        /// Default constructor
+        async_ostream() {}
+
         /// Copy constructor
-        async_ostream(const async_ostream<CharType, Impl>& other) : buffer_(other.buffer_), requests_(other.requests_) {}
+        async_ostream(const async_ostream<CharType, Impl>& other) : requests_(other.requests_), buffer_(other.buffer_) {}
 
         /// Assignment operator
         async_ostream& operator =(const async_ostream<CharType, Impl>& other)
@@ -554,7 +557,7 @@ namespace streams
         }
 
         /// Constructor
-        async_ostream(async_streambuf<CharType, Impl>& buffer) : buffer_(std::make_shared<async_streambuf<CharType, Impl>>(buffer))
+        async_ostream(std::shared_ptr<async_streambuf<CharType, Impl>> buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_out_streambuf_msg);
         }
@@ -701,7 +704,7 @@ namespace streams
 
         /// Test whether the stream has been initialized with a valid stream buffer.
         /// Returns true if the stream has been initialized with a valid stream buffer, false otherwise.
-        bool is_valid() const { return ((bool)*buffer_); }
+        bool is_valid() const { return (buffer_ != nullptr); }
 
         /// Test whether the stream has been initialized or not.
         operator bool() const { return is_valid(); }
@@ -795,16 +798,16 @@ namespace streams
         async_istream() {}
 
         /// Constructor
-        async_istream(async_streambuf<CharType, Impl> buffer) : buffer_(buffer)
+        async_istream(std::shared_ptr<async_streambuf<CharType, Impl>> buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
         }
 
         /// Copy constructor
-        async_istream(const async_istream &other) : buffer_(other.buffer_) {}
+        async_istream(const async_istream& other) : buffer_(other.buffer_) {}
 
         /// Assignment operator
-        async_istream& operator =(const async_istream &other)
+        async_istream& operator =(const async_istream& other)
         {
             buffer_ = other.buffer_;
             return *this;
@@ -981,7 +984,7 @@ namespace streams
         bool can_seek() const { return is_valid() && buffer_->can_seek(); }
 
         /// Test whether the stream has been initialized with a valid stream buffer.
-        bool is_valid() const { return ((bool)buffer_); }
+        bool is_valid() const { return (buffer_ != nullptr); }
 
         /// Test whether the stream has been initialized or not.
         operator bool() const { return is_valid(); }

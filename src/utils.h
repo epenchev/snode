@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <system_error>
 #include <random>
+#include <sstream>
 #include <locale.h>
 
 #ifndef _WIN32
@@ -85,23 +86,24 @@ namespace details
         return boost::iequals(left, right);
 #endif
     }
-}
 
-/// Returns the current date in RFC_1123 date time format
-std::string current_date_time()
-{
-    time_t     now = time(0);
-    struct tm  tstruct;
-    char       buf[80];
-    tstruct = *localtime(&now);
+    /// Returns the current date in RFC_1123 date time format
+    inline std::string current_date_time()
+    {
+        time_t     now = time(0);
+        struct tm  tstruct;
+        char       buf[80];
+        tstruct = *localtime(&now);
 
-    /* Visit http://www.cplusplus.com/reference/clibrary/ctime/strftime/
-    * for more information about date/time format
-    * strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
-    */
-    strftime(buf, sizeof(buf), "%a, %d %b %g %T GMT", &tstruct);
+        /* Visit http://www.cplusplus.com/reference/clibrary/ctime/strftime/
+        * for more information about date/time format
+        * strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
+        */
+        strftime(buf, sizeof(buf), "%a, %d %b %g %T GMT", &tstruct);
 
-    return buf;
+        return buf;
+    }
+
 }
 
 // temporary workaround for the fact that
