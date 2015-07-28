@@ -163,7 +163,19 @@ static std::string convert_body_to_string(const std::string& content_type, http_
         return std::string();
     }
 
-    return std::string();
+    if (streambuf.in_avail() > 0)
+    {
+        std::string body;
+        body.resize(streambuf.in_avail());
+        if(streambuf.scopy((unsigned char *)&body[0], body.size()) == 0)
+            return std::string();
+        else
+            return body;
+    }
+    else
+    {
+        return std::string();
+    }
 }
 
 /// Helper function to generate a string from given http_headers and message body.
@@ -178,9 +190,7 @@ static std::string http_headers_body_to_string(const http_headers &headers, http
 
     std::string content_type;
     if (headers.match(http::header_names::content_type, content_type))
-    {
         buffer << convert_body_to_string(content_type, instream);
-    }
 
     return buffer.str();
 }
@@ -227,23 +237,17 @@ std::string http_msg_base::extract_string(bool ignore_content_type)
     {
         return std::string();
     }
+
     auto buf_r = instream().streambuf();
 
-    auto avail = buf_r.in_avail();
-    if (avail)
+    if (buf_r.in_avail() > 0)
     {
-        unsigned idx = 0;
         std::string body;
-        body.resize((std::string::size_type)avail);
-        uint8_t* data = const_cast<uint8_t *>(reinterpret_cast<const uint8_t*>(body.data()));
-
-        while (avail && buf_r.in_avail() > 0)
-        {
-            idx++;
-            data[idx++] = buf_r.sbumpc();
-            avail--;
-        }
-        return body;
+        body.resize(buf_r.in_avail());
+        if(buf_r.scopy((unsigned char *)&body[0], body.size()) == 0)
+            return std::string();
+        else
+            return body;
     }
     return std::string();
 }
@@ -274,6 +278,56 @@ std::vector<uint8_t> http_msg_base::extract_vector()
     return body;
 }
 
+void http_request_impl::reply(http::http_response& response)
+{
+    if (initiated_response_)
+    {
+        throw http_exception("Error: trying to send multiple responses to an HTTP request");
+    }
+    initiated_response_ = true;
+
+    // If the user didn't explicitly set a reason phrase then we should have it default
+    // if they used one of the standard known status codes.
+     if (response.reason_phrase().empty())
+     {
+         static http_status_to_phrase id_phrase_map[] =
+         {
+#define _PHRASES
+#define DAT(a,b,c) {status_codes::a, c},
+#include "http_constants.dat"
+#undef _PHRASES
+#undef DAT
+         };
+
+         for (const auto& iter : id_phrase_map)
+         {
+             if (iter.id == response.status_code())
+             {
+                 response.set_reason_phrase(iter.phrase);
+                 break;
+             }
+         }
+     }
+
+     response_ = response;
+     response_ready_ = true;
+     while (!response_handlers_.empty())
+     {
+         auto req_op = response_handlers_.front();
+         // We have enough data to satisfy this request
+         async_event_task::connect(&http_request_impl_op::response_ready, req_op, response_);
+         response_handlers_.pop();
+     }
+}
+
+void http_request_impl::reply_if_not_already(http::status_code status)
+{
+    if (!initiated_response_)
+    {
+        http::http_response response(status);
+        reply(response);
+    }
+}
 
 #define _METHODS
 #define DAT(a,b) const method methods::a = b;

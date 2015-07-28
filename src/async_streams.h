@@ -118,6 +118,7 @@ namespace streams
     class async_streambuf : std::enable_shared_from_this<async_streambuf<CharType, Impl>>
     {
     public:
+        typedef CharType char_type;
         typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
         typedef typename traits::pos_type pos_type;
@@ -365,7 +366,7 @@ namespace streams
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
         template<typename ReadHandler>
-        void getn(CharType *ptr, size_t count, ReadHandler handler)
+        void getn(CharType* ptr, size_t count, ReadHandler handler)
         {
             if (!can_read())
                 throw std::runtime_error(utils::s_out_stream_msg);
@@ -379,7 +380,7 @@ namespace streams
         /// Copies up to a given number (count) of characters from the stream synchronously, from source memory (ptr).
         /// Returns the number of characters copied. O if the end of the stream is reached or an asynchronous read is required.
         /// This is a synchronous operation, but is guaranteed to never block.
-        size_t scopy(CharType *ptr, size_t count)
+        size_t scopy(CharType* ptr, size_t count)
         {
             if ( !(current_ex_ == nullptr) )
                 std::rethrow_exception(current_ex_);

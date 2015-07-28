@@ -11,7 +11,7 @@ DAT(MERGE,      "MERGE")
 DAT(PATCH,      "PATCH")
 #endif
 
-#ifdef _RESPONSE_CODES
+#ifdef _PHRASES
 DAT(Continue,               100, "Continue")
 DAT(SwitchingProtocols,     101, "Switching Protocols")
 DAT(OK,                     200, "OK")
@@ -52,7 +52,7 @@ DAT(BadGateway,             502, "Bad Gateway")
 DAT(ServiceUnavailable,     503, "Service Unavailable")
 DAT(GatewayTimeout,         504, "Gateway Time-out")
 DAT(HttpVersionNotSupported,505, "HTTP Version not supported")
-#endif // _RESPONSE_CODES
+#endif // _PHRASES
 
 
 #ifdef _HEADER_NAMES

@@ -25,6 +25,7 @@ namespace streams
     class producer_consumer_buffer : public async_streambuf<CharType, producer_consumer_buffer<CharType>>
     {
     public:
+        typedef CharType char_type;
         typedef async_streambuf<CharType, producer_consumer_buffer> base_stream_type;
         typedef typename producer_consumer_buffer::traits traits;
         typedef typename producer_consumer_buffer::pos_type pos_type;
