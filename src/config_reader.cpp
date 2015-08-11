@@ -127,7 +127,7 @@ std::list<media_config>& app_config::streams()
     return streams_;
 }
 
-std::list<service_config>& app_config::servers()
+std::list<service_config>& app_config::net_services()
 {
     if (!servers_.empty())
         return servers_;

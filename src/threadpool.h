@@ -94,11 +94,10 @@ public:
     }
 
     /// Return a io_service instance for a I/O object to be attached (ex. socket).
-    boost::asio::io_service& service()
+    boost::asio::io_service& io_service()
     {
         // Use a round-robin scheme to choose the next io_service to use.
-        boost::asio::io_service& io_service = *m_io_services[m_next_io_service];
-        ++m_next_io_service;
+        boost::asio::io_service& io_service = *m_io_services[m_next_io_service++];
         if (m_next_io_service == m_io_services.size())
         {
             m_next_io_service = 0;

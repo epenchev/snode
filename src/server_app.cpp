@@ -30,7 +30,6 @@ void server_app::run()
         catch (std::exception& ex)
         {
             // Something bad happened log it
-            std::cout << "[ERROR] " << ex.what() << std::endl;
             // throw;
         }
     }
@@ -40,14 +39,14 @@ void server_app::init()
 {
     config_.init("conf.xml");
     ev_threadpool_ = new io_event_threadpool(config_.io_threads());
-    if (!config_.servers().size())
+    if (!config_.net_services().size())
     {
-        throw std::logic_error("No handlers set in configuration");
+        throw std::logic_error("No network services set in configuration");
     }
 
-    for (auto it = config_.servers().begin(); it != config_.servers().end(); it++)
+    for (auto it = config_.net_services().begin(); it != config_.net_services().end(); it++)
     {
-        tcp_acceptor_ptr acceptor(new boost::asio::ip::tcp::acceptor(ev_threadpool_->service()));
+        tcp_acceptor_ptr acceptor(new boost::asio::ip::tcp::acceptor(ev_threadpool_->io_service()));
         acceptor->open(boost::asio::ip::tcp::v4());
 
         if (!it->host.empty())
@@ -69,15 +68,8 @@ void server_app::init()
         tcp_socket_ptr socket(new tcp::socket(acceptor->get_io_service()));
         acceptor->async_accept(*socket, boost::bind(&server_app::accept_handler, this, socket, acceptor, boost::asio::placeholders::error));
 
-        // create a server handler for each thread
-        for (unsigned idx = 0; idx < ev_threadpool_->threads().size(); idx++)
-        {
-            // create a TCP listener service for every thread
-            tcp_listener* listener = service_factory::create_instance(it->name);
-
-            thread_id_t tid = ev_threadpool_->threads().at(idx)->get_id();
-            listeners_[tid][it->listen_port] = std::make_pair(listener, it->name);
-        }
+        // create a network service object for every listening port
+        services_[it->listen_port] = service_factory::create_instance(it->name);
     }
 }
 
@@ -88,22 +80,22 @@ void server_app::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor
         try
         {
             unsigned netport = socket->local_endpoint().port();
-            thread_id_t tid = ev_threadpool_->threads().at(current_thread_idx_)->get_id();
-            tcp_listener* listener = listeners_[tid][netport].first;
+            net_service* service = services_[netport];
 
             error_code_t err_code;
             tcp::endpoint endpoint = socket->remote_endpoint(err_code);
             if (!err)
             {
-                std::cout << "[DEBUG] Connected from " << endpoint.port() << std::endl;
+                if (!err_code)
+                    std::cout << "[DEBUG] Connected from " << endpoint.port() << std::endl;
             }
 
             // listener service now is responsible for the connected socket
-            async_event_task::connect(&tcp_listener::handle_accept, listener, socket);
+            async_event_task::connect(&net_service::handle_accept, service, socket);
 
             // continue accepting new connections
-            tcp_socket_ptr waitsock(new tcp::socket(acceptor->get_io_service()));
-            acceptor->async_accept(*waitsock, boost::bind(&server_app::accept_handler, this, waitsock, acceptor, boost::asio::placeholders::error));
+            tcp_socket_ptr sock(new tcp::socket(acceptor->get_io_service()));
+            acceptor->async_accept(*sock, boost::bind(&server_app::accept_handler, this, sock, acceptor, boost::asio::placeholders::error));
         }
         catch (std::exception& ex)
         {
@@ -120,6 +112,32 @@ sys_processor_threadpool& server_app::processor_threadpool()
 io_event_threadpool& server_app::event_threadpool()
 {
     return *ev_threadpool_;
+}
+
+net_service::net_service()
+{
+    init_listeners();
+}
+
+void net_service::handle_accept(tcp_socket_ptr socket)
+{
+    if (!listeners_.empty())
+    {
+        auto iter = listeners_.find(_THIS_THREAD_ID());
+        if (listeners_.end() != iter)
+            iter->second->handle_accept(socket);
+    }
+}
+
+void net_service::init_listeners()
+{
+    tcp_listener* ptr = NULL;
+    const std::vector<thread_ptr>& threads = server_app::instance().event_threadpool().threads();
+    auto thread_count = threads.size();
+
+    // fill listeners with the thread id's and empty pointers so later real objects can be assigned
+    for (unsigned idx = 0; idx < thread_count; idx++)
+        listeners_[threads[idx]->get_id()] = ptr;
 }
 
 } // snode

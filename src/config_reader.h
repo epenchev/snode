@@ -77,7 +77,7 @@ public:
     std::list<media_config>& streams();
 
     /// Get the list of all service configurations.
-    std::list<service_config>& servers();
+    std::list<service_config>& net_services();
 };
 
 }
