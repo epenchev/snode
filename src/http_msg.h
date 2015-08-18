@@ -90,6 +90,52 @@ public:
     }
 };
 
+class error_code : public boost::system::error_code
+{
+public:
+    error_code(const boost::system::error_code& err) : boost::system::error_code(err.value(), err.category())
+    {}
+};
+
+/// Base class for get_data_available() completion handlers.
+/// No objects are created directly from this class,
+/// its main purpose is to store event handlers into object containers.
+class data_ready_op
+{
+public:
+    void data_ready(std::size_t size)
+    {
+        func_(this, size);
+    }
+
+protected:
+    typedef void (*func_type)(data_ready_op*, std::size_t);
+    data_ready_op(func_type func) : func_(func) {}
+
+private:
+    func_type func_;
+};
+
+/// Represents a completion handler for get_data_available().
+/// Custom implementation will be executed in response to get_data_availiable() request.
+template<typename EventHandler>
+class data_ready_handler : public data_ready_op
+{
+public:
+
+    data_ready_handler(EventHandler handler)
+        : data_ready_op(&data_ready_handler::do_data_ready), handler_(handler) {}
+
+    static void do_data_ready(data_ready_op* base, std::size_t size)
+    {
+        data_ready_handler* op = static_cast<data_ready_handler*>(base);
+        op->handler_(size);
+    }
+
+private:
+    EventHandler handler_;
+};
+
 
 /// Base class for HTTP messages. This class is to store common functionality so it isn't duplicated on
 /// both the request and response side.
@@ -166,7 +212,24 @@ public:
     /// Get the stream through which the message body could be read
     istream_type& instream() { return instream_; }
 
-    std::size_t get_data_available() const { return data_available_; }
+    template<typename EventHandler>
+    void async_get_data_available(EventHandler handler)
+    {
+        if (!data_available_)
+        {
+            data_ready_handler<EventHandler> op(handler);
+            data_ready_handlers_.push(op);
+        }
+        else
+        {
+            async_event_task::connect(handler, data_available_);
+        }
+    }
+
+    std::size_t get_data_available()
+    {
+        return this->data_available_;
+    }
 
     /// Prepare the message with an output stream to receive network data
     void prepare_to_receive_data();
@@ -192,6 +255,8 @@ protected:
     http_headers headers_;
 
     std::size_t data_available_;
+
+    std::queue<data_ready_op> data_ready_handlers_;
 };
 
 
@@ -370,13 +435,12 @@ public:
         return impl_->instream();
     }
 
-    /// Signals the user (client) when all the data for this response message has been received.
-    void content_ready() const
+    /// Signals the user (listener) when all the data for this response message has been received.
+    /// EventHandler instance will be executed when data_ready is signaled.
+    template <typename EventHandler>
+    void content_ready(EventHandler handler)
     {
-        /*
-        http_response resp = *this;
-        return pplx::create_task(_m_impl->_get_data_available()).then([resp](utility::size64_t) mutable { return resp; });
-        */
+        return impl_->async_get_data_available(handler);
     }
 
     std::shared_ptr<http::http_response_impl> get_impl() const { return impl_; }
@@ -385,83 +449,136 @@ private:
     std::shared_ptr<http::http_response_impl> impl_;
 };
 
-class http_request_impl_op
+/// Base class for async_get_response() completion handlers.
+/// No objects are created directly from this class,
+/// its main purpose is to store event handlers into object containers.
+class response_ready_op
 {
 public:
-    void response_ready(http::http_response response)
+    void response_ready(http::http_response& response)
     {
         func_(this, response);
     }
 
-    protected:
-        typedef void (*func_type)(http_request_impl_op*, http::http_response);
-        http_request_impl_op(func_type func) : func_(func) {}
+protected:
+    typedef void (*func_type)(response_ready_op*, http::http_response&);
+    response_ready_op(func_type func) : func_(func) {}
 
     private:
         func_type func_;
 };
 
-template<typename Handler>
-class async_http_request_handler : public http_request_impl_op
+/// Represents a completion handler for async_get_response().
+/// Custom implementation will be executed when a valid response is present.
+template<typename EventHandler>
+class response_ready_handler : public response_ready_op
 {
 public:
 
-    async_http_request_handler(Handler h)
-        : http_request_impl_op(&async_http_request_handler::do_get_response), handler_(h) {}
+    response_ready_handler(EventHandler h)
+        : response_ready_op(&response_ready_handler::do_get_response), handler_(h) {}
 
-    static void do_get_response(http_request_impl_op* base, http::http_response response)
+    static void do_get_response(response_ready_op* base, http::http_response& response)
     {
-        async_http_request_handler* op = static_cast<async_http_request_handler*>(base);
+        response_ready_handler* op = static_cast<response_ready_handler*>(base);
         op->handler_(response);
     }
 
 private:
-    Handler handler_;
+    EventHandler handler_;
 };
 
+/// Base class for http_request reply() method completion handlers.
+/// No objects are created directly from this class,
+/// its main purpose is to store event handlers into object containers.
+class response_complete_op
+{
+public:
+    void response_complete(http::error_code& err)
+    {
+        func_(this, err);
+    }
+
+protected:
+    typedef void (*func_type)(response_complete_op*, http::error_code&);
+    response_complete_op(func_type func) : func_(func) {}
+
+private:
+    func_type func_;
+};
+
+/// Represents a completion handler for http_request reply() method.
+/// Custom implementation will be executed when sending the http_response is complete.
+template<typename EventHandler>
+class response_complete_handler : public response_complete_op
+{
+public:
+
+    response_complete_handler(EventHandler handler)
+        : response_complete_op(&response_complete_handler::do_response_complete), handler_(handler) {}
+
+    static void do_response_complete(response_complete_op* base, http::error_code& err)
+    {
+        response_complete_handler* op = static_cast<response_complete_handler*>(base);
+        op->handler_(err);
+    }
+
+private:
+    EventHandler handler_;
+};
 
 /// Internal representation of an HTTP request message.
 class http_request_impl : public http_msg_base
 {
-    public:
-        http_request_impl(http::method mtd) : method_(mtd), response_ready_(false), initiated_response_(false) {}
+public:
+    http_request_impl(http::method mtd) : method_(mtd), response_ready_(false), initiated_response_(false) {}
 
-        virtual ~http_request_impl() {}
+    virtual ~http_request_impl() {}
 
-        http::method& method() { return method_; }
+    http::method& method() { return method_; }
 
-        std::string& request_url() { return url_; }
+    std::string& request_url() { return url_; }
 
-        void set_request_url(const std::string& url) { url_ = url; }
+    void set_request_url(const std::string& url) { url_ = url; }
 
-        std::string to_string() const;
+    std::string to_string() const;
 
-        template <typename ResponseHandler>
-        void async_get_response(ResponseHandler handler)
+    template <typename EventHandler>
+    void async_get_response(EventHandler handler)
+    {
+        if (!response_ready_)
         {
-            if (!response_ready_)
-            {
-                async_http_request_handler<ResponseHandler> op(handler);
-                response_handlers_.push(op);
-            }
-            else
-            {
-                async_event_task::connect(handler, response_);
-            }
+            response_ready_handler<EventHandler> op(handler);
+            response_handlers_.push(op);
         }
+        else
+        {
+            async_event_task::connect(handler, boost::ref(response_));
+        }
+    }
 
-        void reply_if_not_already(http::status_code status);
+    void reply_if_not_already(http::status_code status);
 
-        void reply(http::http_response& response);
+    template<typename EventHandler>
+    void reply(http::http_response& response, EventHandler handler)
+    {
+        response_complete_handler<EventHandler> op(handler);
+        response_complete_handlers_.push(op);
+        reply_impl(response);
+    }
 
-    private:
+    void response_send_complete(http::error_code& err);
+private:
 
-        std::string url_;
-        http::method method_;
-        bool response_ready_;
-        bool initiated_response_;
-        http::http_response response_;
-        std::queue<http_request_impl_op> response_handlers_;
+    void reply_impl(http::http_response& response);
+
+    std::string url_;
+    http::method method_;
+    bool response_ready_;
+    bool initiated_response_;
+    http::http_response response_;
+    std::queue<response_ready_op> response_handlers_;
+    std::queue<response_complete_op> response_complete_handlers_;
 };
 
 /// Represents an HTTP request.
@@ -606,20 +723,30 @@ public:
         /* return _m_impl->set_response_stream(stream); */
     }
 
+    /// Gets a task representing the response that will eventually be sent.
+    /// </summary>
+    /// <returns>A task that is completed once response is sent.</returns>
+    template<typename ResponseHandler>
+    void get_response(ResponseHandler handler)
+    {
+        impl_->async_get_response(handler);
+    }
 
     /// Asynchronously responses to this HTTP request.
-    /// <param name="response">Response to send.</param>
-    void reply(http_response& response)
+    /// (response) Response to send.
+    template<typename EventHandler>
+    void reply(http_response& response, EventHandler handler)
     {
-        impl_->reply(response);
+        impl_->reply(response, handler);
     }
 
     /// Asynchronously responses to this HTTP request.
     /// (status) Response status code.
-    void reply(http::status_code status)
+    template<typename EventHandler>
+    void reply(http::status_code status, EventHandler handler)
     {
         http::http_response response(status);
-        reply(response);
+        reply(response, handler);
     }
 
 #if 0
@@ -639,22 +766,26 @@ public:
     /// (status) Response status code.
     /// (body_data) A string containing the text to use in the response body.
     /// (content_type) Content type of the body.
-    void reply(http::status_code status, const std::string& body_data, const std::string& content_type = "text/plain")
+    template<typename EventHandler>
+    void reply(http::status_code status, const std::string& body_data,
+               EventHandler handler, const std::string& content_type = "text/plain")
     {
         http_response response(status);
         response.set_body(body_data, content_type);
-        return reply(response);
+        return reply(response, handler);
     }
 
     /// Responds to this HTTP request.
     /// (status) Response status code.
     /// (content_type) A string holding the MIME type of the message body.
     /// (body) An asynchronous stream representing the body data.
-    void reply(status_code status, http_msg_base::istream_type& body, const std::string& content_type = "application/octet-stream")
+    template<typename EventHandler>
+    void reply(status_code status, http_msg_base::istream_type& body,
+               EventHandler handler, const std::string& content_type = "application/octet-stream")
     {
         http_response response(status);
         response.set_body(body, content_type);
-        return reply(response);
+        return reply(response, handler);
     }
 
     /// Responds to this HTTP request.
@@ -662,17 +793,27 @@ public:
     /// (content_length) The size of the data to be sent in the body.
     /// (content_type) A string holding the MIME type of the message body.
     /// (body) An asynchronous stream representing the body data.
-    void reply(status_code status, http_msg_base::istream_type& body, std::size_t content_length, const std::string& content_type = "application/octet-stream")
+    template<typename EventHandler>
+    void reply(status_code status, http_msg_base::istream_type& body, std::size_t content_length,
+               EventHandler handler, const std::string& content_type = "application/octet-stream")
     {
         http_response response(status);
         response.set_body(body, content_length, content_type);
-        return reply(response);
+        return reply(response, handler);
     }
 
     /// Sends a response if one has not already been sent.
     void reply_if_not_already(http::status_code status) { impl_->reply_if_not_already(status); }
 
     std::shared_ptr<http::http_request_impl> get_impl() { return impl_; }
+
+    /// Signals the user (listener) when all the data for this request message has been received.
+    /// EventHandler instance will be executed when data_ready is signaled.
+    template <typename EventHandler>
+    void content_ready(EventHandler handler)
+    {
+        return impl_->async_get_data_available(handler);
+    }
 
     private:
         std::shared_ptr<http::http_request_impl> impl_;

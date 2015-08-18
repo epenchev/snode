@@ -11,7 +11,7 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <vector>
 
-#include "server_app.h"
+#include "net_service.h"
 #include "seq_generator.h"
 
 namespace snode
@@ -22,28 +22,28 @@ class async_event_task
 {
 public:
 
-    template<typename _Func>
-    static void connect(_Func func, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func>
+    static void connect(Func func, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().event_threadpool().schedule(boost::bind(func), id);
+        snode_core::instance().event_threadpool().schedule(boost::bind(func), id);
     }
 
-    template <typename _Func, typename _Param1>
-    static void connect(_Func func, _Param1 param1, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1>
+    static void connect(Func func, Param1 param1, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().event_threadpool().schedule(boost::bind(func, param1), id);
+        snode_core::instance().event_threadpool().schedule(boost::bind(func, param1), id);
     }
 
-    template <typename _Func, typename _Param1, typename _Param2>
-    static void connect(_Func func, _Param1 param1, _Param2 param2, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1, typename Param2>
+    static void connect(Func func, Param1 param1, Param2 param2, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().event_threadpool().schedule(boost::bind(func, param1, param2), id);
+        snode_core::instance().event_threadpool().schedule(boost::bind(func, param1, param2), id);
     }
 
-    template <typename _Func, typename _Param1, typename _Param2, typename _Param3>
-    static void connect(_Func func, _Param1 param1, _Param2 param2, _Param3 param3, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1, typename Param2, typename Param3>
+    static void connect(Func func, Param1 param1, Param2 param2, Param3 param3, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().event_threadpool().schedule(boost::bind(func, param1, param2, param3), id);
+        snode_core::instance().event_threadpool().schedule(boost::bind(func, param1, param2, param3), id);
     }
 };
 
@@ -53,28 +53,28 @@ class async_processing_task
 {
 public:
 
-    template<typename _Func>
-    static void connect(_Func func, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func>
+    static void connect(Func func, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().processor_threadpool().schedule(boost::bind(func), id);
+        snode_core::instance().processor_threadpool().schedule(boost::bind(func), id);
     }
 
-    template <typename _Func, typename _Param1>
-    static void connect(_Func func, _Param1 param1, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1>
+    static void connect(Func func, Param1 param1, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().processor_threadpool().schedule(boost::bind(func, param1), id);
+        snode_core::instance().processor_threadpool().schedule(boost::bind(func, param1), id);
     }
 
-    template <typename _Func, typename _Param1, typename _Param2>
-    static void connect(_Func func, _Param1 param1, _Param2 param2, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1, typename Param2>
+    static void connect(Func func, Param1 param1, Param2 param2, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().processor_threadpool().schedule(boost::bind(func, param1, param2), id);
+        snode_core::instance().processor_threadpool().schedule(boost::bind(func, param1, param2), id);
     }
 
-    template <typename _Func, typename _Param1, typename _Param2, typename _Param3>
-    static void connect(_Func func, _Param1 param1, _Param2 param2, _Param3 param3, thread_id_t id = _THIS_THREAD_ID())
+    template <typename Func, typename Param1, typename Param2, typename Param3>
+    static void connect(Func func, Param1 param1, Param2 param2, Param3 param3, thread_id_t id = THIS_THREAD_ID())
     {
-        server_app::instance().processor_threadpool().schedule(boost::bind(func, param1, param2, param3), id);
+        snode_core::instance().processor_threadpool().schedule(boost::bind(func, param1, param2, param3), id);
     }
 };
 
@@ -82,7 +82,7 @@ class async_event_timer
 {
 public:
     async_event_timer()
-      : m_timerid(sequence_id_generator::instance().next())
+      : timerid_(sequence_id_generator::instance().next())
     {
     }
 
@@ -90,60 +90,62 @@ public:
     {
     }
 
-    template<typename _Func>
-    void schedule(_Func func, unsigned millisec, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func>
+    void schedule(Func func, unsigned millisec, thread_id_t id = THIS_THREAD_ID())
     {
-        _create_timer(boost::bind(func), millisec, id);
+        create_timer(boost::bind(func), millisec, id);
     }
 
-    template<typename _Func, typename _Param1>
-    void schedule(_Func func, _Param1 param1, int millisec, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func, typename Param1>
+    void schedule(Func func, Param1 param1, int millisec, thread_id_t id = THIS_THREAD_ID())
     {
-        _create_timer(boost::bind(func, param1), millisec, id);
+        create_timer(boost::bind(func, param1), millisec, id);
     }
 
-    template<typename _Func, typename _Param1, typename _Param2>
-    void schedule(_Func func, _Param1 param1, _Param2 param2, int millisec, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func, typename Param1, typename Param2>
+    void schedule(Func func, Param1 param1, Param2 param2, int millisec, thread_id_t id = THIS_THREAD_ID())
     {
-        _create_timer(boost::bind(func, param1, param2), millisec, id);
+        create_timer(boost::bind(func, param1, param2), millisec, id);
     }
 
-    template<typename _Func, typename _Param1, typename _Param2, typename _Param3>
-    void schedule(_Func func, _Param1 param1, _Param2 param2, _Param3 param3, int millisec, thread_id_t id = _THIS_THREAD_ID())
+    template<typename Func, typename Param1, typename Param2, typename Param3>
+    void schedule(Func func, Param1 param1, Param2 param2, Param3 param3, int millisec, thread_id_t id = THIS_THREAD_ID())
     {
-        _create_timer(boost::bind(func, param1, param2, param3), millisec, id);
+        create_timer(boost::bind(func, param1, param2, param3), millisec, id);
     }
 
     void clear()
     {
         boost::system::error_code err;
         // error is not checked, just prevent exception to be thrown.
-        m_timer_impl->cancel(err);
+        timer_->cancel(err);
     }
 
 private:
     typedef unsigned int                                   timer_id_t;
     typedef boost::shared_ptr<boost::asio::deadline_timer> timer_ptr;
 
-    template<typename _Task>
-    void _create_timer(_Task taskfunc, unsigned millisec, thread_id_t id)
+    template<typename Task>
+    void create_timer(Task taskfunc, unsigned millisec, thread_id_t id)
     {
         boost::system::error_code err;
         try
         {
-            m_timer_impl = timer_ptr(new boost::asio::deadline_timer(server_app::instance().event_threadpool().service(id)));
-            m_timer_impl->expires_from_now(boost::posix_time::milliseconds(millisec), err);
+            timer_ = timer_ptr(new boost::asio::deadline_timer(snode_core::instance().event_threadpool().service(id)));
+            timer_->expires_from_now(boost::posix_time::milliseconds(millisec), err);
             if (!err)
-                m_timer_impl->async_wait(taskfunc);
+            {
+                timer_->async_wait(taskfunc);
+            }
         }
-        catch (const _threadpool_err& err)
+        catch (const threadpool_err& err)
         {
             // do nothing just don't throw up :)
         }
     }
 
-    timer_id_t m_timerid;
-    timer_ptr m_timer_impl;
+    timer_id_t timerid_;
+    timer_ptr  timer_;
 };
 
 }

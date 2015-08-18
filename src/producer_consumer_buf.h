@@ -180,7 +180,7 @@ namespace streams
 
         /// internal implementation of putn() from async_streambuf
         template<typename WriteHandler>
-        void putn_impl(CharType* ptr, size_t count, WriteHandler handler)
+        void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
         {
             size_t res = this->write(ptr, count);
             async_event_task::connect(handler, res);
@@ -190,7 +190,8 @@ namespace streams
         template<typename ReadHandler>
         void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
         {
-            enqueue_request(_request(*this, handler, ptr, count));
+            // TODO fix !!!
+            // enqueue_request(_request(*this, handler, ptr, count));
         }
 
         /// internal implementation of sgetn() from async_streambuf
@@ -378,12 +379,14 @@ namespace streams
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
                     size_t countread = parent_.read(bufptr_, count_);
-                    async_event_task::connect(callback_op_, countread);
+                    async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete, callback_op_, countread));
+                    /* async_event_task::connect(callback_op_, countread); */
                 }
                 else
                 {
-                    int_type value = parent_.read_byte();
-                    async_event_task::connect(callback_op_, value);
+                    /* TODO fix */
+                    /* int_type value = parent_.read_byte(); */
+                    /* async_event_task::connect(callback_op_, value); */
                 }
             }
 

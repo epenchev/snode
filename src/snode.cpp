@@ -9,7 +9,7 @@ int main()
     // just for test
     snode::streams::producer_consumer_buffer<char> buf(512);
     //
-    snode::server_app& smkit = snode::server_app::instance();
-    smkit.run();
+    snode::snode_core& snode = snode::snode_core::instance();
+    snode.run();
     return 0;
 }

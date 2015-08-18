@@ -80,6 +80,25 @@ namespace streams
         typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
 
+
+        void operator()(std::size_t size)
+        {
+
+        }
+#if 1
+        void complete(std::size_t size)
+        {
+            // func_size_(this, size);
+        }
+
+        /*
+        void complete(int_type ch)
+        {
+            // func_ch_(this, ch);
+        }*/
+#endif
+
+
 #if 0
         void complete(std::size_t size)
         {

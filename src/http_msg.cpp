@@ -87,6 +87,13 @@ void http_msg_base::set_body(streambuf_type::istream_type& instream, std::size_t
     headers().set_content_length(length);
     set_body(instream, content_type);
     data_available_ = length;
+
+    while (!data_ready_handlers_.empty())
+    {
+        auto event_op = data_ready_handlers_.front();
+        async_event_task::connect(&data_ready_op::data_ready, event_op, data_available_);
+        data_ready_handlers_.pop();
+    }
 }
 
 void http_msg_base::complete(std::size_t body_size)
@@ -179,7 +186,8 @@ static std::string convert_body_to_string(const std::string& content_type, http_
 }
 
 /// Helper function to generate a string from given http_headers and message body.
-static std::string http_headers_body_to_string(const http_headers &headers, http_msg_base::streambuf_type::istream_type instream)
+static std::string http_headers_body_to_string(const http_headers &headers,
+                                               http_msg_base::streambuf_type::istream_type instream)
 {
     std::ostringstream buffer;
     buffer.imbue(std::locale::classic());
@@ -203,7 +211,8 @@ std::string http_msg_base::to_string()
         return std::string();
 }
 
-std::string http_msg_base::parse_and_check_content_type(bool ignore_content_type, const std::function<bool(const std::string&)> &check_content_type)
+std::string http_msg_base::parse_and_check_content_type(bool ignore_content_type,
+                                                        const std::function<bool(const std::string&)> &check_content_type)
 {
     if (!instream())
     {
@@ -278,7 +287,7 @@ std::vector<uint8_t> http_msg_base::extract_vector()
     return body;
 }
 
-void http_request_impl::reply(http::http_response& response)
+void http_request_impl::reply_impl(http::http_response& response)
 {
     if (initiated_response_)
     {
@@ -313,9 +322,9 @@ void http_request_impl::reply(http::http_response& response)
      response_ready_ = true;
      while (!response_handlers_.empty())
      {
-         auto req_op = response_handlers_.front();
+         auto op = response_handlers_.front();
          // We have enough data to satisfy this request
-         async_event_task::connect(&http_request_impl_op::response_ready, req_op, response_);
+         async_event_task::connect(&response_ready_op::response_ready, op, boost::ref(response_));
          response_handlers_.pop();
      }
 }
@@ -325,7 +334,17 @@ void http_request_impl::reply_if_not_already(http::status_code status)
     if (!initiated_response_)
     {
         http::http_response response(status);
-        reply(response);
+        reply_impl(response);
+    }
+}
+
+void http_request_impl::response_send_complete(http::error_code& err)
+{
+    while (!response_complete_handlers_.empty())
+    {
+        auto op = response_complete_handlers_.front();
+        async_event_task::connect(&response_complete_op::response_complete, op, err);
+        response_complete_handlers_.pop();
     }
 }
 

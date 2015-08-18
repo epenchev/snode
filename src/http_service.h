@@ -5,14 +5,16 @@
 #ifndef HTTP_SERVICE_H_
 #define HTTP_SERVICE_H_
 
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
 #include <set>
 #include <map>
 #include <string>
 
+#include <boost/asio.hpp>
+#include <boost/bind.hpp>
+
+
 #include "http_msg.h"
-#include "server_app.h"
+#include "net_service.h"
 
 namespace snode
 {
@@ -60,13 +62,19 @@ private:
     void do_response(bool bad_request);
     template <typename ReadHandler>
     void async_read_until_buffersize(size_t size, const ReadHandler &handler);
-    void async_process_response(http_response response);
-    void cancel_sending_response_with_error(const http_response &response, const std::exception_ptr &);
-    void handle_headers_written(const http_response &response, const boost::system::error_code& ec);
-    void handle_write_large_response(const http_response &response, const boost::system::error_code& ec);
-    void handle_write_chunked_response(const http_response &response, const boost::system::error_code& ec);
-    void handle_response_written(const http_response &response, const boost::system::error_code& ec);
+    void async_process_response(http_response& response);
+    void cancel_sending_response_with_error(const http_response& response, http::error_code& ec);
+    void handle_headers_written(const http_response& response, const boost::system::error_code& ec);
+    void handle_write_large_response(const http_response& response, const boost::system::error_code& ec);
+    void handle_write_chunked_response(const http_response& response, const boost::system::error_code& ec);
+    void handle_response_written(const http_response& response, const boost::system::error_code& ec);
     void finish_request_response();
+
+    void handle_request_data_ready(size_t count, http_response& response) { if (count) async_process_response(response); }
+    void handle_response(http_response& response, bool bad_request);
+    void handle_body_buff_write(size_t count);
+    void handle_chunked_body_buff_write(size_t count);
+    void handle_chunked_response_buff_read(size_t count, http_response& response);
 };
 
 /// Custom HTTP request handler.
@@ -75,7 +83,7 @@ class http_req_handler
 {
 public:
     http_req_handler();
-    ~http_req_handler();
+    ~http_req_handler() {}
 
     /// Get the list of URLs paths for this handler.
     void url_path(std::set<std::string>& outlist)
@@ -147,17 +155,27 @@ public:
     typedef reg_factory<http_req_handler> req_handler_factory;
 
     http_service();
-    ~http_service();
+    virtual ~http_service() {}
 
     /// Entry point for every network service where a new connection is accepted and handled.
     void handle_accept(tcp_socket_ptr sock);
 
     /// Factory method.
-    static net_service* create_object() { return new http_service(); }
+    static net_service* create_object()
+    {
+        static http_service s_http_service;
+        return &s_http_service;
+    }
+
+    /// Get HTTP request handler object for registered to handle the given (url_path)
+    /// If there are no handlers registered to handle this URL a NULL is returned.
+    http_req_handler* get_req_handler(const std::string& url_path);
 
 private:
-    // HTTP request handlers for every thread. URL path => (thread id, handler)
-    std::map<std::string, std::pair<thread_id_t, http_req_handler*>> handlers_;
+    typedef boost::shared_ptr<http_req_handler> req_handler_ptr;
+
+    // HTTP request handlers for every thread. ( thread id => ( URL path => handler ) )
+    std::map<thread_id_t, std::map<std::string, req_handler_ptr>> handlers_;
 };
 
 }}

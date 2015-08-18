@@ -2,11 +2,18 @@
 // http_service.h
 // Copyright (C) 2015  Emil Penchev, Bulgaria
 
+#include <memory>
+
 #include <boost/type_traits.hpp>
 #include <boost/algorithm/string/find.hpp>
+#include <boost/bind.hpp>
 
 #include "http_service.h"
 #include "http_helpers.h"
+#include "http_msg.h"
+#include "async_task.h"
+#include "async_streams.h"
+#include "uri_utils.h"
 
 using namespace boost::asio;
 using namespace boost::asio::ip;
@@ -129,65 +136,91 @@ namespace http
 
 const size_t ChunkSize = 4 * 1024;
 
-#if 0
-void hostport_listener::on_accept(ip::tcp::socket* socket, const boost::system::error_code& ec)
+http_service::http_service()
 {
-    if (ec)
+    if (listeners_.empty())
     {
-        delete socket;
+        this->init_listeners();
+    }
+
+    // for every thread there will be a dedicated http_listener
+    for (auto listener : listeners_)
+    {
+        http_listener lr;
+        listener.second = boost::shared_ptr<tcp_listener_impl<http_listener>>(new tcp_listener_impl<http_listener>(lr));
+    }
+
+    const std::vector<thread_ptr>& threads = snode_core::instance().event_threadpool().threads();
+    std::set<std::string> handlers_list;
+    req_handler_factory::get_reg_list(handlers_list);
+
+    // Setup request handlers for every thread
+    for (auto name : handlers_list)
+    {
+        http_req_handler* req_handler = req_handler_factory::create_instance(name);
+        std::set<std::string> paths;
+        req_handler->url_path(paths);
+
+        if (paths.empty())
+            continue;
+
+        for (auto thread_i : threads)
+        {
+            if (nullptr == req_handler)
+            {
+                req_handler = req_handler_factory::create_instance(name);
+            }
+
+            if (handlers_.count(thread_i->get_id()) > 0)
+            {
+                auto & handlers_map = handlers_[thread_i->get_id()];
+                for (auto url_path : paths)
+                {
+                    // every URL path is handled from a unique handler
+                    if (!handlers_map.count(url_path))
+                    {
+                        handlers_map[url_path] = req_handler_ptr(req_handler);
+                    }
+                }
+            }
+            else
+            {
+                std::map<std::string, req_handler_ptr> handlers_map;
+                for (auto url_path : paths)
+                {
+                    handlers_map[url_path] = req_handler_ptr(req_handler);
+                }
+
+                handlers_[thread_i->get_id()] = handlers_map;
+            }
+            // create new request handler object for each thread
+            req_handler = nullptr;
+        }
+    }
+}
+
+void http_service::handle_accept(tcp_socket_ptr sock)
+{
+    auto it = listeners_.find(THIS_THREAD_ID());
+    if (it != listeners_.end())
+    {
+        it->second->handle_accept(sock);
     }
     else
     {
-        {
-            pplx::scoped_lock<pplx::extensibility::recursive_lock_t> lock(m_connections_lock);
-            m_connections.insert(new connection(std::unique_ptr<tcp::socket>(std::move(socket)), m_p_server, this));
-            m_all_connections_complete.reset();
-
-            if (m_acceptor)
-            {
-                // spin off another async accept
-                auto newSocket = new ip::tcp::socket(crossplat::threadpool::shared_instance().service());
-                m_acceptor->async_accept(*newSocket, boost::bind(&hostport_listener::on_accept, this, newSocket, placeholders::error));
-            }
-        }
+        sock->close();
     }
 }
-#endif
 
-#if 0
-void hostport_listener::stop()
+http_req_handler* http_service::get_req_handler(const std::string& url_path)
 {
-    // halt existing connections
-    {
-        pplx::scoped_lock<pplx::extensibility::recursive_lock_t> lock(m_connections_lock);
-        m_acceptor.reset();
-        for(auto connection : m_connections)
-        {
-            connection->close();
-        }
-    }
-
-    m_all_connections_complete.wait();
+    return NULL;
 }
 
-
-void hostport_listener::add_listener(const std::string& path, web::http::experimental::listener::details::http_listener_impl* listener)
+void http_listener::handle_accept(tcp_socket_ptr sock)
 {
-    pplx::extensibility::scoped_rw_lock_t lock(m_listeners_lock);
-
-    if (!m_listeners.insert(std::map<std::string,web::http::experimental::listener::details::http_listener_impl*>::value_type(path, listener)).second)
-        throw std::invalid_argument("Error: http_listener is already registered for this path");
+    connections_.insert(new http_connection(sock, dynamic_cast<http_service*>(http_service::create_object()), this));
 }
-
-void hostport_listener::remove_listener(const std::string& path, web::http::experimental::listener::details::http_listener_impl*)
-{
-    pplx::extensibility::scoped_rw_lock_t lock(m_listeners_lock);
-
-    if (m_listeners.erase(path) != 1)
-        throw std::invalid_argument("Error: no http_listener found for this path");
-}
-#endif
-
 
 void http_connection::close()
 {
@@ -245,14 +278,14 @@ void http_connection::handle_http_line(const boost::system::error_code& ec)
         else if (boost::iequals(http_verb, http::methods::PUT))     http_verb = http::methods::PUT;
         else if (boost::iequals(http_verb, http::methods::DEL))     http_verb = http::methods::DEL;
         else if (boost::iequals(http_verb, http::methods::HEAD))    http_verb = http::methods::HEAD;
-        else if (boost::iequals(http_verb, http::methods::TRACE))    http_verb = http::methods::TRACE;
+        else if (boost::iequals(http_verb, http::methods::TRACE))   http_verb = http::methods::TRACE;
         else if (boost::iequals(http_verb, http::methods::CONNECT)) http_verb = http::methods::CONNECT;
         else if (boost::iequals(http_verb, http::methods::OPTIONS)) http_verb = http::methods::OPTIONS;
 
         // Check to see if there is not allowed character on the input
         if (!validate_method(http_verb))
         {
-            request_.reply(status_codes::BadRequest);
+            request_.reply_if_not_already(status_codes::BadRequest);
             close_ = true;
             do_response(true);
             return;
@@ -265,27 +298,27 @@ void http_connection::handle_http_line(const boost::system::error_code& ec)
         const size_t VersionPortionSize = sizeof(" HTTP/1.1\r") - 1;
 
         // Make sure path and version is long enough to contain the HTTP version
-        if(http_path_and_version.size() < VersionPortionSize + 2)
+        if (http_path_and_version.size() < VersionPortionSize + 2)
         {
-            request_.reply(status_codes::BadRequest);
+            request_.reply_if_not_already(status_codes::BadRequest);
             close_ = true;
             do_response(true);
             return;
         }
-#if 0
+
         // Get the path - remove the version portion and prefix space
         try
         {
-            request_.set_request_uri(http_path_and_version.substr(1, http_path_and_version.size() - VersionPortionSize - 1));
+            request_.set_request_url(http_path_and_version.substr(1, http_path_and_version.size() - VersionPortionSize - 1));
         }
-        catch(const uri_exception &e)
+        catch (const std::exception& ex)
         {
-            m_request.reply(status_codes::BadRequest, e.what());
-            m_close = true;
+            request_.reply_if_not_already(status_codes::BadRequest);
+            close_ = true;
             do_response(true);
             return;
         }
-#endif
+
 
         // Get the version
         std::string http_version = http_path_and_version.substr(http_path_and_version.size() - VersionPortionSize + 1, VersionPortionSize - 2);
@@ -326,7 +359,7 @@ void http_connection::handle_headers()
         }
         else
         {
-            request_.reply(status_codes::BadRequest);
+            request_.reply_if_not_already(status_codes::BadRequest);
             close_ = true;
             do_response(true);
             return;
@@ -378,7 +411,7 @@ void http_connection::handle_chunked_header(const boost::system::error_code& ec)
 {
     if (ec)
     {
-        /* request_.get_impl()->complete(0, std::make_exception_ptr(http_exception(ec.value()))); */
+        request_.get_impl()->complete(0 /*,std::make_exception_ptr(http_exception(ec.value()))*/);
     }
     else
     {
@@ -399,29 +432,28 @@ void http_connection::handle_chunked_body(const boost::system::error_code& ec, i
 {
     if (ec)
     {
-        /* request_.get_impl()->complete(0, std::make_exception_ptr(http_exception(ec.value()))); */
+        request_.get_impl()->complete(0 /*,std::make_exception_ptr(http_exception(ec.value()))*/);
     }
     else
     {
-#if 0
         auto writebuf = request_.get_impl()->outstream().streambuf();
-        writebuf.putn_nocopy(buffer_cast<const uint8_t *>(m_request_buf.data()), toWrite).then([=](pplx::task<size_t> writeChunkTask)
-        {
-            try
-            {
-                writeChunkTask.get();
-            }
-            catch (...)
-            {
-                request_.get_impl()->complete(0, std::current_exception());
-                return;
-            }
+        /* TODO use putn_nocopy */
+        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite, BIND_HANDLER(&http_connection::handle_chunked_body_buff_write));
+    }
+}
 
-            request_buf_.consume(2 + toWrite);
-            boost::asio::async_read_until(*socket_, request_buf_, CRLF,
-                    boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
-        });
-#endif
+void http_connection::handle_chunked_body_buff_write(size_t count)
+{
+    if (count)
+    {
+        request_buf_.consume(2 + count); // clear the buffer
+        boost::asio::async_read_until(*socket_, request_buf_, CRLF,
+               boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
+    }
+    else
+    {
+        request_.get_impl()->complete(0 /*,std::current_exception()*/);
+        return;
     }
 }
 
@@ -430,33 +462,32 @@ void http_connection::handle_body(const boost::system::error_code& ec)
     // read body
     if (ec)
     {
-        /* request_.get_impl()->complete(0, std::make_exception_ptr(http_exception(ec.value()))); */
+        request_.get_impl()->complete(0 /* , std::make_exception_ptr(http_exception(ec.value())) */);
     }
     else if (read_ < read_size_)  // there is more to read
     {
         auto writebuf = request_.get_impl()->outstream().streambuf();
-#if 0
-        writebuf.putn_nocopy(boost::asio::buffer_cast<const uint8_t*>(request_buf_.data()), std::min(request_buf_.size(), read_size_ - read_)).then([=](pplx::task<size_t> writtenSizeTask)
-        {
-            size_t writtenSize = 0;
-            try
-            {
-                writtenSize = writtenSizeTask.get();
-            }
-            catch (...)
-            {
-                request_.get_impl()->complete(0, std::current_exception());
-                return;
-            }
-            read_ += writtenSize;
-            request_buf_.consume(writtenSize);
-            async_read_until_buffersize(std::min(ChunkSize, read_size_ - read_), boost::bind(&http_connection::handle_body, this, placeholders::error));
-        });
-#endif
+        /* TODO use putn_nocopy */
+        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), std::min(request_buf_.size(), read_size_ - read_), BIND_HANDLER(&http_connection::handle_body_buff_write));
     }
     else  // have read request body
     {
         request_.get_impl()->complete(read_);
+    }
+}
+
+void http_connection::handle_body_buff_write(size_t count)
+{
+    if (count)
+    {
+        read_ += count;
+        request_buf_.consume(count);
+        async_read_until_buffersize(std::min(ChunkSize, read_size_ - read_), boost::bind(&http_connection::handle_body, this, placeholders::error));
+    }
+    else
+    {
+        request_.get_impl()->complete(0 /*,std::current_exception()*/);
+        return;
     }
 }
 
@@ -472,11 +503,11 @@ void http_connection::async_read_until_buffersize(size_t size, const ReadHandler
 
 void http_connection::dispatch_request_to_listener()
 {
-#if 0
     // locate the listener:
-    http_listener_impl* pListener = nullptr;
+    //http_listener_impl* pListener = nullptr;
+    http_req_handler* p_handler = nullptr;
     {
-        auto path_segments = uri::split_path(uri::decode(request_.relative_uri().path()));
+        auto path_segments = uri::split_path(request_.request_url());
         for (auto i = static_cast<long>(path_segments.size()); i >= 0; --i)
         {
             std::string path = "";
@@ -486,93 +517,53 @@ void http_connection::dispatch_request_to_listener()
             }
             path += "/";
 
-            pplx::extensibility::scoped_read_lock_t lock(m_p_parent->m_listeners_lock);
-            auto it = m_p_parent->m_listeners.find(path);
-            if (it != m_p_parent->m_listeners.end())
-            {
-                pListener = it->second;
-                break;
-            }
+            // locate handler
+            p_handler = p_service_->get_req_handler(path);
         }
     }
 
-    if (pListener == nullptr)
+    if (nullptr == p_handler)
     {
-        request_.reply(status_codes::NotFound);
+        request_.reply_if_not_already(status_codes::NotFound);
         do_response(false);
     }
     else
     {
-        request_._set_listener_path(pListener->uri().path());
+        // wait for the response to become ready
         do_response(false);
-
-        // Look up the lock for the http_listener.
-        pplx::extensibility::reader_writer_lock_t *pListenerLock;
-        {
-            pplx::extensibility::reader_writer_lock_t::scoped_lock_read lock(m_p_server->m_listeners_lock);
-
-            // It is possible the listener could have unregistered.
-            if(m_p_server->m_registered_listeners.find(pListener) == m_p_server->m_registered_listeners.end())
-            {
-                request_.reply(status_codes::NotFound);
-                return;
-            }
-            pListenerLock = m_p_server->m_registered_listeners[pListener].get();
-
-            // We need to acquire the listener's lock before releasing the registered listeners lock.
-            // But we don't need to hold the registered listeners lock when calling into the user's code.
-            pListenerLock->lock_read();
-        }
-
         try
         {
-            pListener->handle_request(request_);
-            pListenerLock->unlock();
+            p_handler->handle_request(request_);
         }
-        catch(...)
+        catch (...) // catch whatever we can
         {
-            pListenerLock->unlock();
-            request_._reply_if_not_already(status_codes::InternalError);
+            request_.reply_if_not_already(status_codes::InternalError);
         }
     }
-    
-    if (--m_refs == 0) delete this;
-#endif
 }
 
 void http_connection::do_response(bool bad_request)
 {
-#if 0
-    ++m_refs;
-    request_.get_response().then([=](pplx::task<http::http_response> r_task)
-    {
-        http::http_response response;
-        try
-        {
-            response = r_task.get();
-        }
-        catch(...)
-        {
-            response = http::http_response(status_codes::InternalError);
-        }
-
-        // before sending response, the full incoming message need to be processed.
-        if (bad_request)
-        {
-            async_process_response(response);
-        }
-        else
-        {
-            m_request.content_ready().then([=](pplx::task<http::http_request>)
-            {
-                async_process_response(response);
-            });
-        }
-    });
-#endif
+    request_.get_response(BIND_HANDLER(&http_connection::handle_response, bad_request));
 }
 
-void http_connection::async_process_response(http_response response)
+void http_connection::handle_response(http_response& response, bool bad_request)
+{
+    // before sending response, the full incoming message need to be processed.
+    if (bad_request)
+    {
+        async_process_response(response);
+    }
+    else
+    {
+        if (request_.get_impl()->get_data_available())
+            async_process_response(response);
+        else
+            request_.content_ready(BIND_HANDLER(&http_connection::handle_request_data_ready, response));
+    }
+}
+
+void http_connection::async_process_response(http_response& response)
 {
     response_buf_.consume(response_buf_.size()); // clear the buffer
     std::ostream os(&response_buf_);
@@ -590,11 +581,13 @@ void http_connection::async_process_response(http_response response)
     {
         chunked_  = true;
     }
+
     if (!response.headers().match(header_names::content_length, write_size_) && response.body())
     {
         chunked_ = true;
         response.headers()[header_names::transfer_encoding] = "chunked";
     }
+
     if (!response.body())
     {
         response.headers().add(header_names::content_length,0);
@@ -606,28 +599,22 @@ void http_connection::async_process_response(http_response response)
         if (boost::iequals(header.first, "connection"))
         {
             if (boost::iequals(header.second, "close"))
-            {
                 close_ = true;
-            }
         }
         os << header.first << ": " << header.second << CRLF;
     }
     os << CRLF;
-
     boost::asio::async_write(*socket_, response_buf_, boost::bind(&http_connection::handle_headers_written, this, response, placeholders::error));
 }
 
-void http_connection::cancel_sending_response_with_error(const http_response &response, const std::exception_ptr &eptr)
+void http_connection::cancel_sending_response_with_error(const http_response& response, http::error_code& ec)
 {
-#if 0
-    auto * context = static_cast<linux_request_context*>(response._get_server_context());
-    context->m_response_completed.set_exception(eptr);
-#endif
+    request_.get_impl()->response_send_complete(ec);
     // always terminate the connection since error happens
     finish_request_response();
 }
 
-void http_connection::handle_write_chunked_response(const http_response &response, const boost::system::error_code& ec)
+void http_connection::handle_write_chunked_response(const http_response& response, const boost::system::error_code& ec)
 {
     if (ec)
     {
@@ -637,33 +624,34 @@ void http_connection::handle_write_chunked_response(const http_response &respons
     auto readbuf = response.get_impl()->instream().streambuf();
     if (readbuf.is_eof())
     {
-        return cancel_sending_response_with_error(response, std::make_exception_ptr(http_exception("Response stream close early!")));
+        boost::system::error_code ec(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        http::error_code err(ec);
+        return cancel_sending_response_with_error(response, err);
     }
     auto membuf = response_buf_.prepare(ChunkSize + snode::http::chunked_encoding::additional_encoding_space);
 
-#if 0
-    readbuf.getn(buffer_cast<uint8_t *>(membuf) + snode::http::chunked_encoding::additional_encoding_space, ChunkSize).then([=](pplx::task<size_t> actualSizeTask)
-    {
-        size_t actualSize = 0;
-        try
-        {
-            actualSize = actualSizeTask.get();
-        } catch (...)
-        {
-            return cancel_sending_response_with_error(response, std::current_exception());
-        }
+    readbuf.getn(buffer_cast<uint8_t *>(membuf) + snode::http::chunked_encoding::additional_encoding_space, ChunkSize,
+                    BIND_HANDLER(&http_connection::handle_chunked_response_buff_read, response));
+}
 
-        size_t offset = http::details::chunked_encoding::add_chunked_delimiters(buffer_cast<uint8_t *>(membuf), ChunkSize + snode::http::chunked_encoding::additional_encoding_space, actualSize);
-        response_buf_.commit(actualSize + snode::http::chunked_encoding::additional_encoding_space);
-        response_buf_.consume(offset);
-        boost::asio::async_write(
-                *socket_,
-                response_buf_,
-                boost::bind(actualSize == 0 ? &http_connection::handle_response_written : &http_connection::handle_write_chunked_response,
-                this,
-                response, placeholders::error));
-    });
-#endif
+void http_connection::handle_chunked_response_buff_read(size_t count, http_response& response)
+{
+    if (!count)
+    {
+        boost::system::error_code ec(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        http::error_code err(ec);
+        return cancel_sending_response_with_error(response, err);
+    }
+    else
+    {
+        // TODO transfer buuffer
+        // size_t offset = http::details::chunked_encoding::add_chunked_delimiters(buffer_cast<uint8_t *>(membuf), ChunkSize + snode::http::chunked_encoding::additional_encoding_space, count);
+        response_buf_.commit(count + snode::http::chunked_encoding::additional_encoding_space);
+        /// response_buf_.consume(offset); TODO offset
+        boost::asio::async_write(*socket_, response_buf_,
+                 boost::bind(count == 0 ? &http_connection::handle_response_written : &http_connection::handle_write_chunked_response,
+                               this, response, placeholders::error));
+    }
 }
 
 void http_connection::handle_write_large_response(const http_response &response, const boost::system::error_code& ec)
@@ -673,7 +661,11 @@ void http_connection::handle_write_large_response(const http_response &response,
 
     auto readbuf = response.get_impl()->instream().streambuf();
     if (readbuf.is_eof())
-        return cancel_sending_response_with_error(response, std::make_exception_ptr(http_exception("Response stream close early!")));
+    {
+        // http::error_code err(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        // cancel_sending_response_with_error(response, err);
+        return;
+    }
     size_t readBytes = std::min(ChunkSize, write_size_ - write_);
 
 #if 0
@@ -694,11 +686,13 @@ void http_connection::handle_write_large_response(const http_response &response,
 #endif
 }
 
-void http_connection::handle_headers_written(const http_response &response, const boost::system::error_code& ec)
+void http_connection::handle_headers_written(const http_response& response, const boost::system::error_code& ec)
 {
     if (ec)
     {
-        return cancel_sending_response_with_error(response, std::make_exception_ptr(http_exception(/*ec.value(),*/ "error writing headers")));
+        boost::system::error_code ec(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        http::error_code err(ec);
+        return cancel_sending_response_with_error(response, err);
     }
     else
     {
@@ -709,18 +703,19 @@ void http_connection::handle_headers_written(const http_response &response, cons
     }
 }
 
-void http_connection::handle_response_written(const http_response &response, const boost::system::error_code& ec)
+void http_connection::handle_response_written(const http_response& response, const boost::system::error_code& ec)
 {
-#if 0
-    auto * context = static_cast<linux_request_context*>(response._get_server_context());
     if (ec)
     {
-        return cancel_sending_response_with_error(response, std::make_exception_ptr(http_exception(ec.value(), "error writing response")));
+        http::error_code err(ec);
+        cancel_sending_response_with_error(response, err);
+        return;
     }
     else
     {
-        context->m_response_completed.set();
-        if (!m_close)
+        http::error_code err(ec);
+        request_.get_impl()->response_send_complete(err);
+        if (!close_)
         {
             start_request_response();
         }
@@ -729,7 +724,6 @@ void http_connection::handle_response_written(const http_response &response, con
             finish_request_response();
         }
     }
-#endif
 }
 
 void http_connection::finish_request_response()
@@ -749,144 +743,8 @@ void http_connection::finish_request_response()
     if (--m_refs == 0) delete this;
 #endif
 }
+
 /*
-pplx::task<void> http_linux_server::start()
-{
-    pplx::extensibility::reader_writer_lock_t::scoped_lock_read lock(m_listeners_lock);
-
-    auto it = m_listeners.begin();
-    try
-    {
-        for (; it != m_listeners.end(); ++it)
-        {
-            it->second->start();
-        }
-    }
-    catch (...)
-    {
-        while (it != m_listeners.begin())
-        {
-            --it;
-            it->second->stop();
-        }
-        return pplx::task_from_exception<void>(std::current_exception());
-    }
-
-    m_started = true;
-    return pplx::task_from_result();
-}
-
-pplx::task<void> http_linux_server::stop()
-{
-    pplx::extensibility::reader_writer_lock_t::scoped_lock_read lock(m_listeners_lock);
-
-    m_started = false;
-
-    for(auto & listener : m_listeners)
-    {
-        listener.second->stop();
-    }
-
-    return pplx::task_from_result();
-}
-
-
-std::pair<std::string,std::string> canonical_parts(const http::uri& uri)
-{
-    std::ostringstream endpoint;
-    endpoint.imbue(std::locale::classic());
-    endpoint << uri::decode(uri.host()) << ":" << uri.port();
-
-    auto path = uri::decode(uri.path());
-
-    if (path.size() > 1 && path[path.size()-1] != '/')
-    {
-        path += "/"; // ensure the end slash is present
-    }
-
-    return std::make_pair(endpoint.str(), path);
-}
-
-pplx::task<void> http_linux_server::register_listener(details::http_listener_impl* listener)
-{
-    auto parts = canonical_parts(listener->uri());
-    auto hostport = parts.first;
-    auto path = parts.second;
-
-    {
-        pplx::extensibility::scoped_rw_lock_t lock(m_listeners_lock);
-        if (m_registered_listeners.find(listener) != m_registered_listeners.end())
-        {
-            throw std::invalid_argument("listener already registered");
-        }
-
-        try
-        {
-            m_registered_listeners[listener] = utility::details::make_unique<pplx::extensibility::reader_writer_lock_t>();
-
-            auto found_hostport_listener = m_listeners.find(hostport);
-            if (found_hostport_listener == m_listeners.end())
-            {
-                found_hostport_listener = m_listeners.insert(
-                    std::make_pair(hostport, utility::details::make_unique<details::hostport_listener>(this, hostport))).first;
-
-                if (m_started)
-                {
-                    found_hostport_listener->second->start();
-                }
-            }
-
-            found_hostport_listener->second->add_listener(path, listener);
-        }
-        catch (...)
-        {
-            // Future improvement - really this API should entirely be asychronously.
-            // the hostport_listener::start() method should be made to return a task
-            // throwing the exception.
-            m_registered_listeners.erase(listener);
-            m_listeners.erase(hostport);
-            throw;
-        }
-    }
-
-    return pplx::task_from_result();
-}
-
-pplx::task<void> http_linux_server::unregister_listener(details::http_listener_impl* listener)
-{
-    auto parts = canonical_parts(listener->uri());
-    auto hostport = parts.first;
-    auto path = parts.second;
-    // First remove the listener from hostport listener
-    {
-        pplx::extensibility::scoped_read_lock_t lock(m_listeners_lock);
-        auto itr = m_listeners.find(hostport);
-        if (itr == m_listeners.end())
-        {
-            throw std::invalid_argument("Error: no listener registered for that host");
-        }
-
-        itr->second->remove_listener(path, listener);
-    }
-
-    // Second remove the listener form listener collection
-    std::unique_ptr<pplx::extensibility::reader_writer_lock_t> pListenerLock = nullptr;
-    {
-        pplx::extensibility::scoped_rw_lock_t lock(m_listeners_lock);
-        pListenerLock = std::move(m_registered_listeners[listener]);
-        m_registered_listeners[listener] = nullptr;
-        m_registered_listeners.erase(listener);
-    }
-
-    // Then take the listener write lock to make sure there are no calls into the listener's
-    // request handler.
-    if (pListenerLock != nullptr)
-    {
-        pplx::extensibility::scoped_rw_lock_t lock(*pListenerLock);
-    }
-
-    return pplx::task_from_result();
-}
 
 pplx::task<void> http_linux_server::respond(http::http_response response)
 {

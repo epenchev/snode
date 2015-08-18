@@ -1,14 +1,16 @@
 //
-// server_app.h
+// net_service.h
 // Copyright (C) 2015  Emil Penchev, Bulgaria
 
 
-#ifndef SERVER_APP_H_
-#define SERVER_APP_H_
+#ifndef NET_SERVICE_H_
+#define NET_SERVICE_H_
 
 #include <set>
 #include <list>
 #include <string>
+#include <memory>
+
 #include <boost/asio.hpp>
 #include <boost/shared_ptr.hpp>
 
@@ -41,6 +43,8 @@ protected:
 private:
     accept_func func_;
 };
+
+typedef boost::shared_ptr<tcp_listener> tcp_listener_ptr;
 
 /// A template class that servers as a implementation wrapper for a tcp_listener.
 /// Template type Listener is the actual implementation for a tcp_listener.
@@ -83,11 +87,11 @@ protected:
     /// Internal method to setup listeners map.
     virtual void init_listeners();
 
-    std::map<thread_id_t, tcp_listener*> listeners_;  // tcp_listener objects with the given implementation.
+    std::map<thread_id_t, tcp_listener_ptr> listeners_;  // tcp_listener objects with the given implementation.
 };
 
 /// Main system class, does complete system initialization and provides access to all core objects.
-class server_app
+class snode_core
 {
 private:
     unsigned                                current_thread_idx_;    /// holds index of the current thread to be used to schedule I/O
@@ -100,10 +104,10 @@ private:
 
 public:
     /// server_controller is a singleton, can be accessed only with this method.
-    static server_app& instance()
+    static snode_core& instance()
     {
-        static server_app s_app;
-        return s_app;
+        static snode_core s_core;
+        return s_core;
     }
 
     /// Factory for registering all the server handler classes.
@@ -123,10 +127,10 @@ private:
     /// boost acceptor handler callback function
     void accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor, const error_code_t& err);
 
-    server_app() : current_thread_idx_(0), ev_threadpool_(NULL), sys_threadpool_(NULL)
+    snode_core() : current_thread_idx_(0), ev_threadpool_(NULL), sys_threadpool_(NULL)
     {}
 
-    ~server_app()
+    ~snode_core()
     {
         delete ev_threadpool_;
     }
@@ -134,4 +138,4 @@ private:
 
 }
 
-#endif /* SERVER_APP_H_ */
+#endif /* NET_SERVICE_H_ */

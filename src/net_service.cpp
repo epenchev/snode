@@ -1,10 +1,10 @@
 //
-// server_app.cpp
+// net_service.cpp
 // Copyright (C) 2015  Emil Penchev, Bulgaria
 
 
-#include "server_app.h"
 #include "async_task.h"
+#include "net_service.h"
 
 #include <iostream>
 #include <utility>
@@ -14,7 +14,7 @@ using namespace boost::asio::ip;
 namespace snode
 {
 
-void server_app::run()
+void snode_core::run()
 {
     this->init();
     ev_threadpool_->run();
@@ -35,7 +35,7 @@ void server_app::run()
     }
 }
 
-void server_app::init()
+void snode_core::init()
 {
     config_.init("conf.xml");
     ev_threadpool_ = new io_event_threadpool(config_.io_threads());
@@ -66,14 +66,14 @@ void server_app::init()
 
         // accept code follows
         tcp_socket_ptr socket(new tcp::socket(acceptor->get_io_service()));
-        acceptor->async_accept(*socket, boost::bind(&server_app::accept_handler, this, socket, acceptor, boost::asio::placeholders::error));
+        acceptor->async_accept(*socket, boost::bind(&snode_core::accept_handler, this, socket, acceptor, boost::asio::placeholders::error));
 
         // create a network service object for every listening port
         services_[it->listen_port] = service_factory::create_instance(it->name);
     }
 }
 
-void server_app::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor, const error_code_t& err)
+void snode_core::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor, const error_code_t& err)
 {
     if (!err)
     {
@@ -87,7 +87,9 @@ void server_app::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor
             if (!err)
             {
                 if (!err_code)
+                {
                     std::cout << "[DEBUG] Connected from " << endpoint.port() << std::endl;
+                }
             }
 
             // listener service now is responsible for the connected socket
@@ -95,7 +97,7 @@ void server_app::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor
 
             // continue accepting new connections
             tcp_socket_ptr sock(new tcp::socket(acceptor->get_io_service()));
-            acceptor->async_accept(*sock, boost::bind(&server_app::accept_handler, this, sock, acceptor, boost::asio::placeholders::error));
+            acceptor->async_accept(*sock, boost::bind(&snode_core::accept_handler, this, sock, acceptor, boost::asio::placeholders::error));
         }
         catch (std::exception& ex)
         {
@@ -104,12 +106,12 @@ void server_app::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor
     }
 }
 
-sys_processor_threadpool& server_app::processor_threadpool()
+sys_processor_threadpool& snode_core::processor_threadpool()
 {
     return *sys_threadpool_;
 }
 
-io_event_threadpool& server_app::event_threadpool()
+io_event_threadpool& snode_core::event_threadpool()
 {
     return *ev_threadpool_;
 }
@@ -123,21 +125,24 @@ void net_service::handle_accept(tcp_socket_ptr socket)
 {
     if (!listeners_.empty())
     {
-        auto iter = listeners_.find(_THIS_THREAD_ID());
+        auto iter = listeners_.find(THIS_THREAD_ID());
         if (listeners_.end() != iter)
+        {
             iter->second->handle_accept(socket);
+        }
     }
 }
 
 void net_service::init_listeners()
 {
-    tcp_listener* ptr = NULL;
-    const std::vector<thread_ptr>& threads = server_app::instance().event_threadpool().threads();
+    const std::vector<thread_ptr>& threads = snode_core::instance().event_threadpool().threads();
     auto thread_count = threads.size();
 
     // fill listeners with the thread id's and empty pointers so later real objects can be assigned
     for (unsigned idx = 0; idx < thread_count; idx++)
-        listeners_[threads[idx]->get_id()] = ptr;
+    {
+        listeners_[threads[idx]->get_id()] = nullptr;
+    }
 }
 
 } // snode
