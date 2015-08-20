@@ -219,7 +219,14 @@ http_req_handler* http_service::get_req_handler(const std::string& url_path)
 
 void http_listener::handle_accept(tcp_socket_ptr sock)
 {
-    connections_.insert(new http_connection(sock, dynamic_cast<http_service*>(http_service::create_object()), this));
+    http_conn_ptr conn(new http_connection(sock, dynamic_cast<http_service*>(http_service::instance()), this));
+    connections_.insert(conn);
+}
+
+void http_listener::drop_connection(http_conn_ptr conn)
+{
+    conn->close();
+    connections_.erase(conn);
 }
 
 void http_connection::close()
@@ -233,7 +240,6 @@ void http_connection::close()
         sock->shutdown(tcp::socket::shutdown_both, ec);
         sock->close(ec);
     }
-    request_.reply_if_not_already(status_codes::InternalError);
 }
 
 void http_connection::start_request_response()
@@ -631,12 +637,13 @@ void http_connection::handle_write_chunked_response(const http_response& respons
     auto membuf = response_buf_.prepare(ChunkSize + snode::http::chunked_encoding::additional_encoding_space);
 
     readbuf.getn(buffer_cast<uint8_t *>(membuf) + snode::http::chunked_encoding::additional_encoding_space, ChunkSize,
-                    BIND_HANDLER(&http_connection::handle_chunked_response_buff_read, response));
+                    BIND_HANDLER(&http_connection::handle_chunked_response_buff_read,
+                                  buffer_cast<uint8_t*>(membuf), response));
 }
 
-void http_connection::handle_chunked_response_buff_read(size_t count, http_response& response)
+void http_connection::handle_chunked_response_buff_read(size_t count, uint8_t* membuf, http_response& response)
 {
-    if (!count)
+    if (!count || !membuf)
     {
         boost::system::error_code ec(boost::system::errc::make_error_code(boost::system::errc::io_error));
         http::error_code err(ec);
@@ -644,10 +651,9 @@ void http_connection::handle_chunked_response_buff_read(size_t count, http_respo
     }
     else
     {
-        // TODO transfer buuffer
-        // size_t offset = http::details::chunked_encoding::add_chunked_delimiters(buffer_cast<uint8_t *>(membuf), ChunkSize + snode::http::chunked_encoding::additional_encoding_space, count);
+        size_t offset = http::chunked_encoding::add_chunked_delimiters(membuf, ChunkSize + snode::http::chunked_encoding::additional_encoding_space, count);
         response_buf_.commit(count + snode::http::chunked_encoding::additional_encoding_space);
-        /// response_buf_.consume(offset); TODO offset
+        response_buf_.consume(offset);
         boost::asio::async_write(*socket_, response_buf_,
                  boost::bind(count == 0 ? &http_connection::handle_response_written : &http_connection::handle_write_chunked_response,
                                this, response, placeholders::error));
@@ -656,34 +662,34 @@ void http_connection::handle_chunked_response_buff_read(size_t count, http_respo
 
 void http_connection::handle_write_large_response(const http_response &response, const boost::system::error_code& ec)
 {
-    if (ec || write_ == write_size_)
+    if (ec || (write_ == write_size_))
         return handle_response_written(response, ec);
 
     auto readbuf = response.get_impl()->instream().streambuf();
     if (readbuf.is_eof())
     {
-        // http::error_code err(boost::system::errc::make_error_code(boost::system::errc::io_error));
-        // cancel_sending_response_with_error(response, err);
+        http::error_code err(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        cancel_sending_response_with_error(response, err);
         return;
     }
     size_t readBytes = std::min(ChunkSize, write_size_ - write_);
 
-#if 0
-    readbuf.getn(buffer_cast<uint8_t *>(response_buf.prepare_(readBytes)), readBytes).then([=](pplx::task<size_t> actualSizeTask)
+    auto membuf = response_buf_.prepare(readBytes);
+    readbuf.getn(buffer_cast<uint8_t *>(membuf), readBytes, BIND_HANDLER(&http_connection::handle_large_response_buff_read, response));
+}
+
+void http_connection::handle_large_response_buff_read(size_t count, http_response& response)
+{
+    if (!count)
     {
-        size_t actualSize = 0;
-        try
-        {
-            actualSize = actualSizeTask.get();
-        } catch (...)
-        {
-            return cancel_sending_response_with_error(response, std::current_exception());
-        }
-        write_ += actualSize;
-        response_buf_.commit(actualSize);
-        boost::asio::async_write(*socket_, response_buf_, boost::bind(&http_connection::handle_write_large_response, this, response, placeholders::error));
-    });
-#endif
+        boost::system::error_code ec(boost::system::errc::make_error_code(boost::system::errc::io_error));
+        http::error_code err(ec);
+        return cancel_sending_response_with_error(response, err);
+    }
+
+    write_ += count;
+    response_buf_.commit(count);
+    boost::asio::async_write(*socket_, response_buf_, boost::bind(&http_connection::handle_write_large_response, this, response, placeholders::error));
 }
 
 void http_connection::handle_headers_written(const http_response& response, const boost::system::error_code& ec)
@@ -728,29 +734,8 @@ void http_connection::handle_response_written(const http_response& response, con
 
 void http_connection::finish_request_response()
 {
-#if 0
-    // kill the connection
-    {
-        pplx::scoped_lock<pplx::extensibility::recursive_lock_t> lock(m_p_parent->m_connections_lock);
-        m_p_parent->m_connections.erase(this);
-        if (m_p_parent->m_connections.empty())
-        {
-            m_p_parent->m_all_connections_complete.set();
-        }
-    }
-    
     close();
-    if (--m_refs == 0) delete this;
-#endif
+    p_listener_->drop_connection(shared_from_this());
 }
-
-/*
-
-pplx::task<void> http_linux_server::respond(http::http_response response)
-{
-    details::linux_request_context * p_context = static_cast<details::linux_request_context*>(response._get_server_context());
-    return pplx::create_task(p_context->m_response_completed);
-}
-*/
 
 }}

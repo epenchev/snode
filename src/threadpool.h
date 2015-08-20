@@ -48,6 +48,9 @@ public:
             io_services_.push_back(io_service);
             work_.push_back(work);
         }
+
+        // Run a io_service over the main server thread
+        threads_index_.insert(std::pair<thread_id_t, size_t>(boost::this_thread::get_id(), 0));
     }
 
     ~io_event_threadpool()
@@ -63,12 +66,16 @@ public:
     /// Start all I/O service event loops/threads
     void run()
     {
-        for (unsigned idx = 0; idx < io_services_.size(); idx++)
+        // create additional threads if specified in the config
+        for (unsigned idx = 1; idx < io_services_.size(); idx++)
         {
             thread_ptr thread(new boost::thread(boost::bind(&io_event_threadpool::start_thread, this, idx)));
             threads_.push_back(thread);
             threads_index_.insert(std::pair<thread_id_t, size_t>(thread->get_id(), idx));
         }
+
+        // execution ends here
+        io_services_[0]->run();
     }
 
     /// Post a task to a given event loop/thread. Task can be anything as long it has () operator defined.

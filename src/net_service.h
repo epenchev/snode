@@ -127,13 +127,8 @@ private:
     /// boost acceptor handler callback function
     void accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor, const error_code_t& err);
 
-    snode_core() : current_thread_idx_(0), ev_threadpool_(NULL), sys_threadpool_(NULL)
-    {}
-
-    ~snode_core()
-    {
-        delete ev_threadpool_;
-    }
+    snode_core();
+    ~snode_core();
 };
 
 }

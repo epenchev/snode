@@ -134,7 +134,7 @@ namespace streams
     /// CharType is the data type of the basic element of the async_streambuf
     /// and Impl is the actual buffer internal implementation.
     template<typename CharType, typename Impl>
-    class async_streambuf : std::enable_shared_from_this<async_streambuf<CharType, Impl>>
+    class async_streambuf
     {
     public:
         typedef CharType char_type;
@@ -159,7 +159,7 @@ namespace streams
         {
             if (!can_read())
                 throw std::runtime_error("stream buffer not set up for input of data");
-            return istream_type(this->shared_from_this());
+            return istream_type(this);
         }
 
         /// Constructs an output stream for this stream buffer.
@@ -167,7 +167,7 @@ namespace streams
         {
             if (!can_write())
                 throw std::runtime_error("stream buffer not set up for output of data");
-            return ostream_type(this->shared_from_this());
+            return ostream_type(this);
         }
 
         /// can_seek() is used to determine whether a stream buffer supports seeking.
@@ -577,7 +577,7 @@ namespace streams
         }
 
         /// Constructor
-        async_ostream(std::shared_ptr<async_streambuf<CharType, Impl>> buffer) : buffer_(buffer)
+        async_ostream(async_streambuf<CharType, Impl>* buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_out_streambuf_msg);
         }
@@ -801,7 +801,7 @@ namespace streams
 
         friend class write_context;
         std::set<std::shared_ptr<write_context>> requests_;
-        std::shared_ptr<async_streambuf<CharType, Impl>> buffer_;
+        async_streambuf<CharType, Impl>* buffer_;
     };
 
     /// Base interface for all asynchronous input streams.
@@ -818,7 +818,7 @@ namespace streams
         async_istream() {}
 
         /// Constructor
-        async_istream(std::shared_ptr<async_streambuf<CharType, Impl>> buffer) : buffer_(buffer)
+        async_istream(async_streambuf<CharType, Impl>* buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
         }
@@ -1326,7 +1326,7 @@ namespace streams
         }
 
         std::set<std::shared_ptr<read_context>> requests_;
-        std::shared_ptr<async_streambuf<CharType, Impl>> buffer_;
+        async_streambuf<CharType, Impl>* buffer_;
     };
 }
 }

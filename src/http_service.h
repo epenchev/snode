@@ -25,7 +25,7 @@ class http_service;
 class http_listener;
 
 /// Represents a stateless HTTP server session.
-class http_connection
+class http_connection :  public boost::enable_shared_from_this<http_connection>
 {
 private:
     tcp_socket_ptr socket_;
@@ -74,7 +74,8 @@ private:
     void handle_response(http_response& response, bool bad_request);
     void handle_body_buff_write(size_t count);
     void handle_chunked_body_buff_write(size_t count);
-    void handle_chunked_response_buff_read(size_t count, http_response& response);
+    void handle_chunked_response_buff_read(size_t count, uint8_t* membuf, http_response& response);
+    void handle_large_response_buff_read(size_t count, http_response& response);
 };
 
 /// Custom HTTP request handler.
@@ -142,9 +143,13 @@ class http_listener
 {
 public:
     http_listener() {}
+    typedef boost::shared_ptr<http_connection> http_conn_ptr;
+
     void handle_accept(tcp_socket_ptr sock);
 
-    std::set<http_connection*> connections_;
+    void drop_connection(http_conn_ptr conn);
+
+    std::set<http_conn_ptr> connections_;
 };
 
 /// HTTP service class.
@@ -159,6 +164,11 @@ public:
 
     /// Entry point for every network service where a new connection is accepted and handled.
     void handle_accept(tcp_socket_ptr sock);
+
+    static http_service* instance()
+    {
+        return static_cast<http_service*>(http_service::create_object());
+    }
 
     /// Factory method.
     static net_service* create_object()

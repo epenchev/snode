@@ -16,9 +16,7 @@ namespace snode
 
 void snode_core::run()
 {
-    this->init();
     ev_threadpool_->run();
-
     // run main server thread, mostly responsible for logging and signal catching
     while (true)
     {
@@ -105,6 +103,17 @@ void snode_core::accept_handler(tcp_socket_ptr socket, tcp_acceptor_ptr acceptor
         }
     }
 }
+
+snode_core::snode_core() : current_thread_idx_(0), ev_threadpool_(NULL), sys_threadpool_(NULL)
+{
+    init();
+}
+
+snode_core::~snode_core()
+{
+    delete ev_threadpool_;
+}
+
 
 sys_processor_threadpool& snode_core::processor_threadpool()
 {
