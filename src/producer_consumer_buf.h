@@ -38,13 +38,7 @@ namespace streams
             allocblock_(nullptr),
             total_(0), total_read_(0), total_written_(0),
             synced_(0)
-        {
-        }
-
-        /// Destructor
-        ~producer_consumer_buffer()
-        {
-        }
+        {}
 
         /// internal implementation of can_seek() from async_streambuf
         bool can_seek_impl() const { return false; }
@@ -54,9 +48,7 @@ namespace streams
 
         /// internal implementation of buffer_size() from async_streambuf
         size_t buffer_size_impl(std::ios_base::openmode = std::ios_base::in) const
-        {
-            return 0;
-        }
+        { return 0; }
 
         /// internal implementation of in_avail() from async_streambuf
         size_t in_avail_impl() const { return total_; }
@@ -66,7 +58,9 @@ namespace streams
         {
             if ( ((mode & std::ios_base::in) && !this->can_read()) ||
                  ((mode & std::ios_base::out) && !this->can_write()))
-                 return static_cast<pos_type>(traits::eof());
+            {
+                return static_cast<pos_type>(traits::eof());
+            }
 
             if (mode == std::ios_base::in)
                 return (pos_type)total_read_;
@@ -76,8 +70,12 @@ namespace streams
                 return (pos_type)traits::eof();
         }
 
-        // Seeking is not supported
+        /// Seeking is not supported
+        /// internal implementation of seekpos() from async_streambuf
         pos_type seekpos_impl(pos_type, std::ios_base::openmode) { return (pos_type)traits::eof(); }
+
+        /// Seeking is not supported
+        /// internal implementation of seekoff() from async_streambuf
         pos_type seekoff_impl(off_type , std::ios_base::seekdir , std::ios_base::openmode ) { return (pos_type)traits::eof(); }
 
         /// internal implementation of alloc() from async_streambuf
@@ -98,11 +96,9 @@ namespace streams
         }
 
         /// internal implementation of commit() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         void commit_impl(size_t count)
         {
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
-
             // The count does not reflect the actual size of the block.
             // Since we do not allow any more writes to this block it would suffice.
             // If we ever change the algorithm to reuse blocks then this needs to be revisited.
@@ -116,15 +112,13 @@ namespace streams
         }
 
         /// internal implementation of acquire() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         bool acquire_impl(CharType*& ptr, size_t& count)
         {
             count = 0;
             ptr = nullptr;
 
             if (!this->can_read()) return false;
-
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
 
             if (blocks_.empty())
             {
@@ -145,13 +139,12 @@ namespace streams
         }
 
         /// internal implementation of release() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         void release_impl(CharType* ptr, size_t count)
         {
             if (ptr == nullptr)
                 return;
 
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
             auto block = blocks_.front();
 
             assert(block->rd_chars_left() >= count);
@@ -161,11 +154,9 @@ namespace streams
         }
 
         /// internal implementation of sync() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         void sync_impl()
         {
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
-
             synced_ = this->in_avail();
             fulfill_outstanding();
         }
@@ -190,23 +181,20 @@ namespace streams
         template<typename ReadHandler>
         void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
         {
-            // TODO fix !!!
-            // enqueue_request(_request(*this, handler, ptr, count));
+            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            enqueue_request(ev_request(*this, handler_op, ptr, count));
         }
 
         /// internal implementation of sgetn() from async_streambuf
         size_t sgetn_impl(CharType* ptr, size_t count)
         {
-            // add lock !!!
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
             return can_satisfy(count) ? this->read(ptr, count) : (size_t)traits::requires_async();
         }
 
         /// internal implementation of scopy() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         size_t scopy_impl(CharType* ptr, size_t count)
         {
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
             return can_satisfy(count) ? this->read(ptr, count, false) : (size_t)traits::requires_async();
         }
 
@@ -214,14 +202,14 @@ namespace streams
         template<typename ReadHandler>
         void bumpc_impl(ReadHandler handler)
         {
-            enqueue_request(_request(*this, handler));
+            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            enqueue_request(ev_request(*this, handler_op));
         }
 
         /// internal implementation of sbumpc() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         int_type sbumpc_impl()
         {
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
             return can_satisfy(1) ? this->read_byte(true) : traits::requires_async();
         }
 
@@ -229,14 +217,16 @@ namespace streams
         template<typename ReadHandler>
         void getc_impl(ReadHandler handler)
         {
-            enqueue_request(_request(*this, handler));
+            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            async_streambuf_operation<CharType> oper = handler_op;
+            oper.complete_ch('u');
+            // enqueue_request(ev_request(*this, handler_op));
         }
 
         /// internal implementation of sgetc() from async_streambuf
+        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
         int_type sgetc_impl()
         {
-            // add lock
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
             return can_satisfy(1) ? this->read_byte(false) : traits::requires_async();
         }
 
@@ -244,7 +234,8 @@ namespace streams
         template<typename ReadHandler>
         void nextc_impl(ReadHandler handler)
         {
-            enqueue_request(_request(*this, handler));
+            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            enqueue_request(ev_request(*this, handler_op));
         }
 
         /// internal implementation of ungetc() from async_streambuf
@@ -361,13 +352,13 @@ namespace streams
 
 
         /// Represents a request on the stream buffer - typically reads
-        class _request
+        class ev_request
         {
         public:
-            _request(producer_consumer_buffer<CharType>& parent, async_streambuf_operation<CharType> op, CharType* ptr = nullptr, size_t count = 1)
-                : count_(count), bufptr_(ptr), callback_op_(op), parent_(parent)
-            {
-            }
+            ev_request(producer_consumer_buffer<CharType>& parent, async_streambuf_operation<CharType> op,
+                       CharType* ptr = nullptr, size_t count = 1)
+            : count_(count), bufptr_(ptr), callback_op_(op), parent_(parent)
+            {}
 
             size_t size() const
             {
@@ -379,14 +370,14 @@ namespace streams
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
                     size_t countread = parent_.read(bufptr_, count_);
-                    async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete, callback_op_, countread));
-                    /* async_event_task::connect(callback_op_, countread); */
+                    async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete_size, callback_op_, countread));
                 }
                 else
                 {
-                    /* TODO fix */
-                    /* int_type value = parent_.read_byte(); */
-                    /* async_event_task::connect(callback_op_, value); */
+                    // int_type value = parent_.read_byte();
+                    int_type value = 'r';
+                    // async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete_ch, callback_op_, value));
+                    callback_op_.complete_ch(value);
                 }
             }
 
@@ -430,7 +421,7 @@ namespace streams
             if (!this->can_read())
                 return count;
 
-            // add lock
+            // add lock TODO !!!
             // pplx::extensibility::scoped_critical_section_t l(m_lock);
 
             // Allocate a new block if necessary
@@ -470,11 +461,8 @@ namespace streams
             }
         }
 
-        void enqueue_request(_request req)
+        void enqueue_request(ev_request req)
         {
-            // Must use some kind of lock !!!
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
-
             if (can_satisfy(req.size()))
             {
                 // We can immediately fulfill the request.
@@ -583,7 +571,7 @@ namespace streams
         std::deque<std::shared_ptr<_block>> blocks_;
 
         // Queue of requests
-        std::queue<_request> requests_;
+        std::queue<ev_request> requests_;
     };
 
 }} // namespaces

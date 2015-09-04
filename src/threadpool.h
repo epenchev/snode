@@ -66,16 +66,36 @@ public:
     /// Start all I/O service event loops/threads
     void run()
     {
-        // create additional threads if specified in the config
         for (unsigned idx = 1; idx < io_services_.size(); idx++)
         {
             thread_ptr thread(new boost::thread(boost::bind(&io_event_threadpool::start_thread, this, idx)));
             threads_.push_back(thread);
             threads_index_.insert(std::pair<thread_id_t, size_t>(thread->get_id(), idx));
         }
-
-        // execution ends here
         io_services_[0]->run();
+    }
+
+    /// Stop all I/O service event loops/threads
+    void stop()
+    {
+        auto it = threads_index_.find(boost::this_thread::get_id());
+        if (it != threads_index_.end())
+        {
+            // main thread is calling this proceed with stop
+            if (0 == it->second)
+            {
+                for (auto iter = threads_.begin(); iter != threads_.end(); ++iter)
+                {
+                    thread_ptr thread = *iter;
+                    stop_thread(thread->get_id());
+                    thread->join();
+                }
+                // clear all threads run() will create new ones
+                threads_.clear();
+
+                io_services_[0]->stop();
+            }
+        }
     }
 
     /// Post a task to a given event loop/thread. Task can be anything as long it has () operator defined.
@@ -130,7 +150,10 @@ private:
         }
         catch (const cancel_thread_err&)
         {
-            // thread was cancelled
+            // thread was cancelled, all queued event tasks will get error code
+            // operation canceled
+            if (!io_services_[idx]->stopped())
+                io_services_[idx]->stop();
         }
         catch (...)
         {
@@ -150,7 +173,7 @@ private:
     std::vector<work_ptr> work_;
     std::vector<io_service_ptr> io_services_;
     std::vector<thread_ptr> threads_;
-    std::map<thread_id_t, size_t> threads_index_;
+    std::map<thread_id_t, size_t> threads_index_; // thread -> io_service index map
 };
 
 /// General purpose thread pool,
@@ -163,20 +186,34 @@ public:
     typedef synchronised_queue< boost::function<void()> > task_queue_t;
     typedef boost::shared_ptr<task_queue_t> task_queue_ptr;
 
-    sys_processor_threadpool()
-    {
-    }
+    sys_processor_threadpool(size_t pool_size = 1) : pool_size_(pool_size)
+    {}
 
     ~sys_processor_threadpool()
     {
+        stop();
     }
 
-    /// Add/create a new thread to the pool.
-    thread_id_t add_thread()
+    void run()
     {
-        thread_ptr thread(new boost::thread(boost::bind(&sys_processor_threadpool::start_thread, this)));
-        threads_index_.insert(std::pair<thread_id_t, thread_ptr>(thread->get_id(), thread));
-        return thread->get_id();
+        for (size_t i = 0; i < pool_size_; i++)
+        {
+            thread_ptr thread(new boost::thread(boost::bind(&sys_processor_threadpool::start_thread, this)));
+            threads_.push_back(thread);
+        }
+    }
+
+    void stop()
+    {
+        for (auto iter = threads_.begin(); iter != threads_.end(); ++iter)
+        {
+            thread_ptr thread = *iter;
+            stop_thread(thread->get_id());
+            thread->join();
+        }
+        // clear all threads and queues run() will create new ones
+        threads_.clear();
+        queues_index_.clear();
     }
 
     /// Post a task to a given event loop/thread. Task can be anything as long it has () operator defined.
@@ -184,7 +221,6 @@ public:
     template<typename T>
     void schedule(T task, thread_id_t id)
     {
-        boost::unique_lock<boost::mutex> autolock(queues_lock_);
         auto it = queues_index_.find(id);
         if (it == queues_index_.end())
         {
@@ -193,17 +229,6 @@ public:
         else if (id == it->first)
         {
             it->second->enqueue(task);
-        }
-    }
-    
-    /// Stop/delete thread.
-    void drop_thread(thread_id_t id)
-    {
-        boost::unique_lock<boost::mutex> autolock(queues_lock_);
-        auto it = threads_index_.find(id);
-        if (it != threads_index_.end())
-        {
-            schedule([]() -> void { throw cancel_thread_err(); }, id);
         }
     }
 
@@ -223,9 +248,8 @@ private:
             }
             catch (const cancel_thread_err&)
             {
-                // thread was cancelled
-                threads_index_.erase(threads_index_.find(boost::this_thread::get_id()));
-                queues_index_.erase(queues_index_.find(boost::this_thread::get_id()));
+                // thread was cancelled,
+                // all queued tasks will not be executed
                 return;
             }
             catch (...)
@@ -236,8 +260,14 @@ private:
         }
     }
 
-    boost::mutex queues_lock_;
-    std::map<thread_id_t, thread_ptr> threads_index_;
+    /// Stop thread, internal method.
+    void stop_thread(thread_id_t id)
+    {
+        schedule([]() -> void { throw cancel_thread_err(); }, id);
+    }
+
+    std::size_t pool_size_;
+    std::vector<thread_ptr> threads_;
     std::map<thread_id_t, task_queue_ptr> queues_index_;
 };
 

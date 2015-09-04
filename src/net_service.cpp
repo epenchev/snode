@@ -16,21 +16,14 @@ namespace snode
 
 void snode_core::run()
 {
+    // Launch all threads and associated io_service objects.
+    // main entry point of the server.
     ev_threadpool_->run();
-    // run main server thread, mostly responsible for logging and signal catching
-    while (true)
-    {
-        try
-        {
-            auto task = task_queue_.dequeue();
-            task();
-        }
-        catch (std::exception& ex)
-        {
-            // Something bad happened log it
-            // throw;
-        }
-    }
+}
+
+void snode_core::stop()
+{
+    ev_threadpool_->stop();
 }
 
 void snode_core::init()

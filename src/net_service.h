@@ -99,7 +99,6 @@ private:
     sys_processor_threadpool*               sys_threadpool_;        /// handling all heavy computing tasks.
     std::list<tcp_acceptor_ptr>             acceptors_;             /// socket acceptors listening for incoming connections.
     app_config                              config_;                /// master configuration.
-    sys_processor_threadpool::task_queue_t  task_queue_;            /// server thread task queue
     std::map<unsigned short, net_service*>  services_;              /// net port -> net_service map association
 
 public:
@@ -115,6 +114,9 @@ public:
 
     /// Main entry point of the system, read configuration and runs the system.
     void run();
+
+    /// Stop server engine and cancel all tasks waiting to be executed.
+    void stop();
 
     sys_processor_threadpool& processor_threadpool();
 
