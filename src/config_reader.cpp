@@ -10,75 +10,88 @@
 
 namespace snode
 {
+// general
+static const char* s_threads_section = "threads";
+static const char* s_daemon_section = "daemon";
+static const char* s_logfile_section = "logfile";
+static const char* s_admin_user_section = "admin.username";
+static const char* s_admin_password_section = "admin.password";
+static const char* s_options_section = "options";
+// streams
+static const char* s_streams_section = "streams";
+static const char* s_streams_location_section = "location";
+static const char* s_streams_live_section = "live";
+static const char* s_streams_source_section = "source";
+static const char* s_streams_filter_section = "filter";
+// services
+static const char* s_services_section = "services";
+// static const char* s_services_transport_protocol = "protocol";
+static const char* s_service_name_section = "name";
+static const char* s_service_hostport_section = "listen";
+// errors
+static const char* s_err_missing_source = "missing source";
+static const char* s_err_missing_streams = "No streams defined";
 
-void app_config::init(const std::string& filepath)
+void snode_config::init(const std::string& filepath)
 {
     try
     {
         read_xml(filepath, ptree_);
-    } catch (std::exception &ex) {
-        throw config_reader_error(ex.what());
+        read_streams();
+        read_services();
+    }
+    catch (std::exception &ex)
+    {
+        err_.set(ex.what());
     }
 }
 
-unsigned app_config::io_threads()
+unsigned snode_config::threads()
 {
     // don't consider default value as error
-    return ptree_.get("io_threads", 1);
+    return ptree_.get(s_threads_section, 1);
 }
 
-unsigned app_config::process_threads()
-{
-    // don't consider default value as error
-    return ptree_.get("max_threads", 1);
-}
-
-bool app_config::daemonize()
+bool snode_config::daemonize()
 {
     try
     {
-        std::string val = ptree_.get<std::string>("daemon");
-        if (!val.empty())
-        {
-            if (val.compare("yes"))
-                return true;
-            else
-                return false;
-        }
-    } catch (std::exception& ex) {
-        // do nothing
+        unsigned val = ptree_.get(s_daemon_section, 0);
+        if (val)
+            return true;
+        else
+            return false;
+    }
+    catch (std::exception& ex)
+    {
+        err_.set(ex.what());
     }
 
     return false;
 }
 
-std::string app_config::logfile()
+std::string snode_config::logfile()
 {
-    return ptree_.get("logfile", "");
+    return ptree_.get(s_logfile_section, "");
 }
 
-std::string app_config::pidfile()
+std::string snode_config::username()
 {
-    return ptree_.get("pidfile", "");
+    return ptree_.get(s_admin_user_section, "");
 }
 
-std::string app_config::username()
+std::string snode_config::password()
 {
-    return ptree_.get("admin.username", "");
-}
-
-std::string app_config::password()
-{
-    return ptree_.get("admin.password", "");
+    return ptree_.get(s_admin_password_section, "");
 }
 
 static void get_options(boost::property_tree::ptree& ptree_reader, options_map_t& out_options)
 {
-    boost::property_tree::ptree::const_assoc_iterator it_assoc = ptree_reader.find("options");
+    boost::property_tree::ptree::const_assoc_iterator it_assoc = ptree_reader.find(s_options_section);
     if (it_assoc != ptree_reader.not_found())
     {
-        boost::property_tree::ptree::iterator it_opt = ptree_reader.get_child("options").begin();
-        while (it_opt != ptree_reader.get_child("options").end())
+        boost::property_tree::ptree::iterator it_opt = ptree_reader.get_child(s_options_section).begin();
+        while (it_opt != ptree_reader.get_child(s_options_section).end())
         {
             out_options.insert(std::pair<std::string, std::string>(it_opt->first, boost::lexical_cast<std::string>(it_opt->second.data())));
             ++it_opt;
@@ -86,81 +99,85 @@ static void get_options(boost::property_tree::ptree& ptree_reader, options_map_t
     }
 }
 
-std::list<media_config>& app_config::streams()
+const std::list<media_config>& snode_config::streams()
 {
-    if (!streams_.empty())
-        return streams_;
+    return streams_;
+}
 
+void snode_config::read_streams()
     try
     {
-        boost::property_tree::ptree::iterator iter = ptree_.get_child("streams").begin();
-        while (iter != ptree_.get_child("streams").end())
+        boost::property_tree::ptree::iterator iter = ptree_.get_child(s_streams_section).begin();
+        while (iter != ptree_.get_child(s_streams_section).end())
         {
             media_config stream;
-            std::string val = iter->second.get<std::string>("live");
-            if (!val.empty())
+            unsigned val = iter->second.get(s_streams_live_section, 0);
+            if (val)
             {
-                if (val.compare("yes"))
-                {
-                    // value is not interesting as long as the option is set
-                    stream.options["yes"] = "true";
-                }
+                stream.options[s_streams_live_section] = "1";
             }
 
-            stream.location = iter->second.get<std::string>("location");
-            std::string class_name = iter->second.get<std::string>("class_source", "");
-            if (!class_name.empty())
-                stream.options["source"] = class_name;
+            stream.location = iter->second.get<std::string>(s_streams_location_section);
+            std::string source_class = iter->second.get<std::string>(s_streams_source_section, "");
+            if (!source_class.empty())
+                stream.options[s_streams_source_section] = source_class;
+            else
+                throw std::runtime_error(s_err_missing_source);
 
-            class_name = iter->second.get<std::string>("filter_source", "");
-            if (!class_name.empty())
-                stream.options["filter"] = class_name;
+            std::string filter_class = iter->second.get<std::string>(s_streams_filter_section, "");
+            if (!filter_class.empty())
+                stream.options[s_streams_filter_section] = filter_class;
 
             get_options(iter->second, stream.options);
             streams_.push_back(stream);
             ++iter;
         }
-    } catch (std::exception& ex) {
-        throw config_reader_error(ex.what());
-    }
 
-    return streams_;
+        if (streams_.empty())
+            err_.set(s_err_missing_streams);
+    }
+    catch (std::exception& ex)
+    {
+        err_.set(ex.what());
 }
 
-std::list<service_config>& app_config::net_services()
+const std::list<net_service_config>& snode_config::services()
 {
-    if (!servers_.empty())
-        return servers_;
+    return services_;
+}
 
+void snode_config::read_services()
+{
     try
     {
-        boost::property_tree::ptree::iterator iter = ptree_.get_child("servers").begin();
-        while (iter != ptree_.get_child("servers").end())
+        boost::property_tree::ptree::iterator iter = ptree_.get_child(s_services_section).begin();
+        while (iter != ptree_.get_child(s_services_section).end())
         {
-            service_config server;
-            server.name = iter->second.get<std::string>("name");
-            auto listen = iter->second.get<std::string>("listen");
-            auto pos = listen.find_first_of(":");
+            net_service_config service;
+            service.name = iter->second.get<std::string>(s_service_name_section);
+            auto service_hostport = iter->second.get<std::string>(s_service_hostport_section);
+            auto pos = service_hostport.find_first_of(":");
             if (pos != std::string::npos)
             {
-                server.host = listen.substr(0, pos);
-                server.listen_port = boost::lexical_cast<unsigned>(listen.substr(pos + 1));
+                service.host = service_hostport.substr(0, pos);
+                service.listen_port = boost::lexical_cast<unsigned>(service_hostport.substr(pos + 1));
             }
             else
             {
-                server.host = "";
-                server.listen_port = iter->second.get<unsigned>("listen");
+                service.host = "";
+                service.listen_port = iter->second.get<unsigned>(s_service_hostport_section);
             }
 
-            get_options(iter->second, server.options);
-            servers_.push_back(server);
+            get_options(iter->second, service.options);
+            services_.push_back(service);
             ++iter;
         }
-    } catch (std::exception& ex) {
-        throw config_reader_error(ex.what());
-    }
 
-    return servers_;
+    }
+    catch (std::exception& ex)
+    {
+        err_.set(ex.what());
+    }
 }
 
 }

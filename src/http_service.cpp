@@ -3,7 +3,6 @@
 // Copyright (C) 2015  Emil Penchev, Bulgaria
 
 #include <memory>
-
 #include <boost/type_traits.hpp>
 #include <boost/algorithm/string/find.hpp>
 #include <boost/bind.hpp>
@@ -14,6 +13,7 @@
 #include "async_task.h"
 #include "async_streams.h"
 #include "uri_utils.h"
+#include "snode_core.h"
 
 using namespace boost::asio;
 using namespace boost::asio::ip;
@@ -25,6 +25,8 @@ namespace snode
 namespace http
 {
 
+// register http service into the global net_service factory
+snode_core::service_factory::registrator<http_service> http_service_reg("http");
 
 // Avoid using boost regex in the async_read_until() call.
 // This class replaces the regex "\r\n\r\n|[\x00-\x1F]|[\x80-\xFF]"
@@ -138,19 +140,7 @@ const size_t ChunkSize = 4 * 1024;
 
 http_service::http_service()
 {
-    if (listeners_.empty())
-    {
-        this->init_listeners();
-    }
-
-    // for every thread there will be a dedicated http_listener
-    for (auto listener : listeners_)
-    {
-        http_listener lr;
-        listener.second = boost::shared_ptr<tcp_listener_impl<http_listener>>(new tcp_listener_impl<http_listener>(lr));
-    }
-
-    const std::vector<thread_ptr>& threads = snode_core::instance().event_threadpool().threads();
+    const std::vector<thread_ptr>& threads = snode_core::instance().get_threadpool().threads();
     std::set<std::string> handlers_list;
     req_handler_factory::get_reg_list(handlers_list);
 
@@ -199,17 +189,10 @@ http_service::http_service()
     }
 }
 
-void http_service::handle_accept(tcp_socket_ptr sock)
+void http_service::accept(tcp_socket_ptr sock)
 {
-    auto it = listeners_.find(THIS_THREAD_ID());
-    if (it != listeners_.end())
-    {
-        it->second->handle_accept(sock);
-    }
-    else
-    {
-        sock->close();
-    }
+    auto listener = listeners_factory_.get_next_listener();
+    listener->on_accept(sock);
 }
 
 http_req_handler* http_service::get_req_handler(const std::string& url_path)
@@ -217,7 +200,7 @@ http_req_handler* http_service::get_req_handler(const std::string& url_path)
     return NULL;
 }
 
-void http_listener::handle_accept(tcp_socket_ptr sock)
+void http_listener::do_accept(tcp_socket_ptr sock)
 {
     http_conn_ptr conn(new http_connection(sock, dynamic_cast<http_service*>(http_service::instance()), this));
     connections_.insert(conn);

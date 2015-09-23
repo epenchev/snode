@@ -181,8 +181,9 @@ namespace streams
         template<typename ReadHandler>
         void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
         {
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
-            enqueue_request(ev_request(*this, handler_op, ptr, count));
+            typedef async_streambuf_op<CharType, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            enqueue_request(ev_request(*this, op, ptr, count));
         }
 
         /// internal implementation of sgetn() from async_streambuf
@@ -202,8 +203,9 @@ namespace streams
         template<typename ReadHandler>
         void bumpc_impl(ReadHandler handler)
         {
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
-            enqueue_request(ev_request(*this, handler_op));
+            typedef async_streambuf_op<CharType, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            enqueue_request(ev_request(*this, op));
         }
 
         /// internal implementation of sbumpc() from async_streambuf
@@ -217,10 +219,9 @@ namespace streams
         template<typename ReadHandler>
         void getc_impl(ReadHandler handler)
         {
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
-            async_streambuf_operation<CharType> oper = handler_op;
-            oper.complete_ch('u');
-            // enqueue_request(ev_request(*this, handler_op));
+            typedef async_streambuf_op<CharType, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            enqueue_request(ev_request(*this, op));
         }
 
         /// internal implementation of sgetc() from async_streambuf
@@ -234,8 +235,9 @@ namespace streams
         template<typename ReadHandler>
         void nextc_impl(ReadHandler handler)
         {
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
-            enqueue_request(ev_request(*this, handler_op));
+            typedef async_streambuf_op<CharType, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            enqueue_request(ev_request(*this, op));
         }
 
         /// internal implementation of ungetc() from async_streambuf
@@ -355,9 +357,9 @@ namespace streams
         class ev_request
         {
         public:
-            ev_request(producer_consumer_buffer<CharType>& parent, async_streambuf_operation<CharType> op,
+            ev_request(producer_consumer_buffer<CharType>& parent, async_streambuf_op_base<CharType>* op,
                        CharType* ptr = nullptr, size_t count = 1)
-            : count_(count), bufptr_(ptr), callback_op_(op), parent_(parent)
+            : count_(count), bufptr_(ptr), parent_(parent), completion_op_(op)
             {}
 
             size_t size() const
@@ -370,22 +372,21 @@ namespace streams
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
                     size_t countread = parent_.read(bufptr_, count_);
-                    async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete_size, callback_op_, countread));
+                    async_event_task::connect(&async_streambuf_op_base<CharType>::complete_size, completion_op_, countread);
                 }
                 else
                 {
-                    // int_type value = parent_.read_byte();
-                    int_type value = 'r';
-                    // async_event_task::connect(boost::bind(&async_streambuf_operation<CharType>::complete_ch, callback_op_, value));
-                    callback_op_.complete_ch(value);
+                    int_type value = parent_.read_byte();
+                    async_event_task::connect(&async_streambuf_op_base<CharType>::complete_ch, completion_op_, value);
+                    completion_op_->complete_ch(value);
                 }
             }
 
         protected:
             size_t count_;
             CharType* bufptr_;
-            async_streambuf_operation<CharType> callback_op_;
             producer_consumer_buffer<CharType>& parent_;
+            async_streambuf_op_base<CharType>* completion_op_;
         };
 
         /// Close the stream buffer for writing

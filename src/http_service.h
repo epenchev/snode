@@ -8,13 +8,12 @@
 #include <set>
 #include <map>
 #include <string>
-
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
-
 
 #include "http_msg.h"
 #include "net_service.h"
+#include "net_service_helpers.h"
+#include "snode_types.h"
 
 namespace snode
 {
@@ -24,7 +23,7 @@ namespace http
 class http_service;
 class http_listener;
 
-/// Represents a stateless HTTP server session.
+/// HTTP server session.
 class http_connection :  public boost::enable_shared_from_this<http_connection>
 {
 private:
@@ -145,7 +144,7 @@ public:
     http_listener() {}
     typedef boost::shared_ptr<http_connection> http_conn_ptr;
 
-    void handle_accept(tcp_socket_ptr sock);
+    void do_accept(tcp_socket_ptr sock);
 
     void drop_connection(http_conn_ptr conn);
 
@@ -163,7 +162,7 @@ public:
     virtual ~http_service() {}
 
     /// Entry point for every network service where a new connection is accepted and handled.
-    void handle_accept(tcp_socket_ptr sock);
+    virtual void accept(tcp_socket_ptr sock);
 
     static http_service* instance()
     {
@@ -186,6 +185,8 @@ private:
 
     // HTTP request handlers for every thread. ( thread id => ( URL path => handler ) )
     std::map<thread_id_t, std::map<std::string, req_handler_ptr>> handlers_;
+
+    net_service_listener_factory<http_listener> listeners_factory_;
 };
 
 }}

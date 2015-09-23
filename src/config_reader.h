@@ -14,17 +14,9 @@ namespace snode
 {
 
 typedef std::map<std::string, std::string> options_map_t;
-///  General error class used for throwing exceptions from xml_reader.
-class config_reader_error : public std::runtime_error
-{
-public:
-    ///  Construct error
-    config_reader_error(const std::string& what_arg) : runtime_error(what_arg) {}
-    ~config_reader_error() throw() {}
-};
 
-/// Configuration parameters for a given streaming/network service.
-struct service_config
+/// Configuration parameters for a given network service.
+struct net_service_config
 {
     std::string     name;
     std::string     host;
@@ -41,12 +33,45 @@ struct media_config
 };
 
 /// Main application configuration.
-class app_config
+class snode_config
 {
 private:
+
+    /// Custom error code for snode_config
+    struct error
+    {
+        std::string message() const { return msg_; }
+        error() : is_set_(false) {}
+        error(const std::string& msg) : msg_(msg), is_set_(true) {}
+        explicit operator bool() const noexcept { return is_set_; }
+
+    private:
+        friend class snode_config;
+
+        void set(const std::string& msg)
+        {
+            msg_ = msg;
+            is_set_ = true;
+        }
+
+        void clear()
+        {
+            msg_.clear();
+            is_set_ = false;
+        }
+
+        std::string msg_;
+        bool is_set_;
+    };
+
+    void read_streams();
+    void read_services();
+
+    snode_config::error err_;
     boost::property_tree::ptree ptree_;
     std::list<media_config> streams_;
-    std::list<service_config> servers_;
+    std::list<net_service_config> services_;
+
 public:
 
     /// Read configuration from file
@@ -55,17 +80,11 @@ public:
     /// Get run as a background service option.
     bool daemonize();
 
-    /// Get I/O event threads count.
-    unsigned io_threads();
-
-    /// Get processing threads count.
-    unsigned process_threads();
+    /// Get threads count.
+    unsigned threads();
 
     /// Get log file pathname
     std::string logfile();
-
-    /// Get pid file if set (only Unix)
-    std::string pidfile();
 
     /// Get the user name if set.
     std::string username();
@@ -74,10 +93,12 @@ public:
     std::string password();
 
     /// Media streams configuration.
-    std::list<media_config>& streams();
+    const std::list<media_config>& streams();
 
     /// Get the list of all service configurations.
-    std::list<service_config>& net_services();
+    const std::list<net_service_config>& services();
+
+    const snode_config::error& error() const { return err_; }
 };
 
 }

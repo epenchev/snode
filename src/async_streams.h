@@ -74,7 +74,7 @@ namespace streams
     /// Base class for all async_streambuf completion operations.
     /// A function pointer is used instead of virtual functions to avoid the associated overhead.
     template<typename CharType>
-    class async_streambuf_operation
+    class async_streambuf_op_base
     {
     public:
         typedef snode::streams::char_traits<CharType> traits;
@@ -93,10 +93,10 @@ namespace streams
         }
 
     protected:
-        typedef void (*func_ch_type)(async_streambuf_operation*, int_type);
-        typedef void (*func_size_type)(async_streambuf_operation*, std::size_t);
+        typedef void (*func_ch_type)(async_streambuf_op_base*, int_type);
+        typedef void (*func_size_type)(async_streambuf_op_base*, std::size_t);
 
-        async_streambuf_operation(func_ch_type func_ch, func_size_type func_size)
+        async_streambuf_op_base(func_ch_type func_ch, func_size_type func_size)
          : func_ch_(func_ch), func_size_(func_size)
         {
         }
@@ -106,37 +106,37 @@ namespace streams
         func_size_type func_size_;
     };
 
-    /// Wraps callback handlers into recognizable objects so they can be easily stored.
-    /// A callback handler (Handler) is functor or function pointer to be called when an asynchronous operation completes.
-    /// Also functor must be copy-constructible.
+    /// Wraps handlers into async_streambuf completion operations.
+    /// A handler (Handler) is functor or function pointer to be called when an asynchronous operation completes.
+    /// Also handler must be copy-constructible.
     template<typename CharType, typename Handler>
-    class async_streambuf_handler : public async_streambuf_operation<CharType>
+    class async_streambuf_op : public async_streambuf_op_base<CharType>
     {
     public:
-        typedef async_streambuf_operation<CharType> operation_base;
-        typedef async_streambuf_handler<CharType, Handler> astreambuf_handler;
+        typedef async_streambuf_op_base<CharType> streambuf_op_base;
         typedef snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
 
-        async_streambuf_handler(Handler h)
-          : operation_base(&async_streambuf_handler::do_complete_ch, &async_streambuf_handler::do_complete_size), handler_(h)
+        async_streambuf_op(Handler h)
+          : streambuf_op_base(&async_streambuf_op::do_complete_ch, &async_streambuf_op::do_complete_size), handler_(h)
         {}
 
-        static void do_complete_ch(operation_base* base, int_type ch)
+        static void do_complete_ch(streambuf_op_base* base, int_type ch)
         {
-            astreambuf_handler* op(static_cast<astreambuf_handler*>(base));
+            async_streambuf_op* op(static_cast<async_streambuf_op*>(base));
             op->handler_(ch);
+            delete op;
         }
 
-        static void do_complete_size(operation_base* base, std::size_t size)
+        static void do_complete_size(streambuf_op_base* base, std::size_t size)
         {
-            astreambuf_handler* op(static_cast<astreambuf_handler*>(base));
+            async_streambuf_op* op(static_cast<async_streambuf_op*>(base));
             op->handler_(size);
+            delete op;
         }
         private:
             Handler handler_;
     };
-
 
     // Forward declarations
     template<typename CharType, typename Impl> class async_istream;
@@ -603,7 +603,7 @@ namespace streams
             if (count == 0)
                 return;
 
-            async_streambuf_handler<CharType, WriteHandler> handler_op(handler);
+            async_streambuf_op<CharType, WriteHandler> handler_op(handler);
             std::shared_ptr<write_context> context(std::make_shared<write_context>(handler_op, count));
             requests_.insert(context);
 
@@ -724,7 +724,7 @@ namespace streams
         class write_context : public std::enable_shared_from_this<write_context>
         {
         public:
-            write_context(async_streambuf_operation<CharType> op, size_t count) : callback_op_(op), count_(count)
+            write_context(async_streambuf_op_base<CharType> op, size_t count) : callback_op_(op), count_(count)
             {
             }
 
@@ -764,7 +764,7 @@ namespace streams
             // bytes to be written to the stream
             size_t count_;
             // user provided handler executed when write is complete
-            async_streambuf_operation<CharType> callback_op_;
+            async_streambuf_op_base<CharType> callback_op_;
         };
 
         void post_write_complete(std::shared_ptr<write_context> context)
@@ -858,7 +858,7 @@ namespace streams
             if (count == 0)
                 return;
 
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
             std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op, count));
             requests_.insert(context);
 
@@ -914,7 +914,7 @@ namespace streams
                 throw std::runtime_error("target not set up for output of data");
 
             std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
             std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
             requests_.insert(context);
             context->do_read_to_delim(delim, this, &target, helper);
@@ -933,7 +933,7 @@ namespace streams
                 throw std::runtime_error("target not set up for receiving data");
 
             std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
             std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
             requests_.insert(context);
             context->do_read_line(this, &target, helper);
@@ -952,7 +952,7 @@ namespace streams
                 throw std::runtime_error("target not set up for receiving data");
 
             std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_handler<CharType, ReadHandler> handler_op(handler);
+            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
             std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
             requests_.insert(context);
             buffer_->getn(helper->outbuf, buf_size_, BIND_OBJ_HANDLER(&read_context::post_read_to_end, context.get(), this, target, helper));
@@ -1033,7 +1033,7 @@ namespace streams
         class read_context : public std::enable_shared_from_this<read_context>
         {
         public:
-            read_context(async_streambuf_operation<CharType> op, size_t count = 0)
+            read_context(async_streambuf_op_base<CharType> op, size_t count = 0)
                 : callback_op_(op), read_count_(count), eof_or_delim_(false)
             {
             }
@@ -1288,7 +1288,7 @@ namespace streams
             }
 
             size_t read_count_;
-            async_streambuf_operation<CharType> callback_op_;
+            async_streambuf_op_base<CharType> callback_op_;
             bool eof_or_delim_;
         };
 

@@ -1,8 +1,6 @@
 <logfile>skit.log</logfile> <!-- global parameters mandatory-->
-<pidfile>skit.pid</pidfile>
-<daemon>yes</daemon>
-<io_threads>1</threads>
-<max_threads>1</max_threads>
+<daemon>1</daemon>
+<threads>1</threads>
 
 <!-- JSON managment API authentication -->
 <admin>
@@ -10,44 +8,47 @@
 	<password>some password</password>
 </admin>
 
-<servers>
-    <server>
+<services>
+    <service>
         <name>http</name> <!-- HTTP server is mandatory config directive -->
         <listen>8080</listen>
-    </server>
+    </service>
 
-    <server>
+    <service>
         <name>rtmp</name>
         <listen>1935</listen>
         <options>
             <publish>allow</publish>
             <chunkSize>4000</chunkSize>
         </options>
-    </server>
-</servers>
+    </service>
+</services>
     
 <streams>
     <stream>
         <name>bunny</name>
+	<source>file_stream</source>
         <location>/media/emo/20A7503C234281D8/bbb_sunflower.mp4</location>
     </stream>
 
     <stream>
         <name>FoxLiveTV</name>
         <location>http://127.0.0.1:8099/</location>
-        <live>yes</live>
-        <source>DVBStreamHTTP</source>
-	    <filter>MPEG2TsMP4H264</filter>
+        <live>1</live>
+        <source>dvb_stream</source>
+	<filter>mpg2ts_to_h264</filter>
    </stream>
 
    <stream>
-    <name>Movie</name>
-	<location>/home/emo/Downloads/sample.mp4</location>
-    <options>
-	    <cashing>no</cashing>
-	    <seekable>yes</seekable>
-    </options>
+   	<name>Movie</name>
+   	<source>file_stream</source>
+   	<location>/home/emo/Downloads/sample.mp4</location>
+   	<options>
+	    <cashing>0</cashing>
+	    <seekable>1</seekable>
+  	</options>
    </stream>
+
 </streams>
 
 
