@@ -9,7 +9,7 @@
 #include <utility>
 
 using namespace boost::asio::ip;
-static const char* s_config_path = "conf.xml";
+static const char* s_config_path = "src/conf.xml";
 
 namespace snode
 {
@@ -47,7 +47,7 @@ void snode_core::init()
 {
     config_.init(s_config_path);
     if (config_.error())
-        throw std::runtime_error(config_.error().message());
+        return;
 
     threadpool_ = new threadpool(config_.threads());
     for (auto it = config_.services().begin(); it != config_.services().end(); it++)
@@ -109,7 +109,6 @@ snode_core::snode_core() : threadpool_(nullptr)
 
 snode_core::~snode_core()
 {
-    stop();
     delete threadpool_;
 }
 

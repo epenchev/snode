@@ -26,24 +26,28 @@ class net_service_listener_base
 public:
     void on_accept(tcp_socket_ptr sock) { func_(this, sock); }
 
+    /// Get associated thread id with the listener
+    const thread_id_t& thread_id() { return thread_id_; }
 protected:
     typedef void (*on_accept_func)(net_service_listener_base*, tcp_socket_ptr);
-    net_service_listener_base(on_accept_func func) : func_(func)
+    net_service_listener_base(on_accept_func func, thread_id_t id) : thread_id_(id), func_(func)
     {}
 
 private:
+    thread_id_t thread_id_;
     on_accept_func func_;
 };
 
-typedef std::shared_ptr<net_service_listener_base> net_service_listener_ptr;
+typedef std::shared_ptr<net_service_listener_base> net_service_listener_base_ptr;
 
-/// Static polymorphism with CRTP, add listener implementation with template argument.
+/// (Listener) net_service_listener implementation.
+/// Listener implementation must have do_accept(tcp_socket_ptr) method implemented and to be copy constructive.
 template <typename Listener>
 class net_service_listener : public net_service_listener_base
 {
 public:
-    net_service_listener(Listener impl)
-     : net_service_listener_base(&net_service_listener::on_accept_impl), impl_(impl)
+    net_service_listener(Listener impl, thread_id_t id)
+     : net_service_listener_base(&net_service_listener::on_accept_impl, id), impl_(impl)
     {}
 
     static void on_accept_impl(net_service_listener_base* base, tcp_socket_ptr sock)
@@ -66,18 +70,19 @@ public:
     net_service_listener_factory()
      : last_used_(-1)
     {
-        auto threadcount = snode_core::instance().get_threadpool().threads().size();
+        auto threads = snode_core::instance().get_threadpool().threads();
+        auto count = threads.size();
         // map listeners with the thread id's
-        for (int idx = 0; idx < threadcount; idx++)
+        for (int idx = 0; idx < count; idx++)
         {
             ServiceListener impl;
-            listeners_[idx] = std::make_shared<net_service_listener<ServiceListener>>(impl);
+            listeners_[idx] = std::make_shared<net_service_listener<ServiceListener>>(impl, threads[idx]->get_id());
         }
     }
 
     /// Get listener for a specific thread_id (id).
     /// If there is no match for this id a runtime error exception is thrown
-    net_service_listener_ptr get_listener(thread_id_t id)
+    net_service_listener_base_ptr get_listener(thread_id_t id)
     {
         auto threads = snode_core::instance().get_threadpool().threads();
         for (int idx = 0; idx < threads.size(); idx++)
@@ -93,7 +98,7 @@ public:
     }
 
     /// Round robin mechanism for fetching a net_service_listener.
-    net_service_listener_ptr get_next_listener()
+    net_service_listener_base_ptr get_next_listener()
     {
         if (last_used_ < 0)
             last_used_ = 0;
@@ -110,7 +115,7 @@ public:
 
 protected:
     int last_used_;
-    std::map<int, net_service_listener_ptr> listeners_;
+    std::map<int, net_service_listener_base_ptr> listeners_;
 };
 
 }

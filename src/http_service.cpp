@@ -14,6 +14,7 @@
 #include "async_streams.h"
 #include "uri_utils.h"
 #include "snode_core.h"
+#include "handler_allocator.h"
 
 using namespace boost::asio;
 using namespace boost::asio::ip;
@@ -192,7 +193,7 @@ http_service::http_service()
 void http_service::accept(tcp_socket_ptr sock)
 {
     auto listener = listeners_factory_.get_next_listener();
-    listener->on_accept(sock);
+    snode::async_event_task::connect(&net_service_listener_base::on_accept, listener, sock, listener->thread_id());
 }
 
 http_req_handler* http_service::get_req_handler(const std::string& url_path)
@@ -233,7 +234,11 @@ void http_connection::start_request_response()
 
     // Wait for either double newline or a char which is not in the range [32-127] which suggests SSL handshaking.
     // For the SSL server support this line might need to be changed. Now, this prevents from hanging when SSL client tries to connect.
-    async_read_until(*socket_, request_buf_, crlf_nonascii_searcher, boost::bind(&http_connection::handle_http_line, this, placeholders::error));
+    // async_read_until(*socket_, request_buf_, crlf_nonascii_searcher, boost::bind(&http_connection::handle_http_line, this, placeholders::error));
+
+    snode::handler_allocator allocator;
+    async_read_until(*socket_, request_buf_, crlf_nonascii_searcher,
+                    make_custom_alloc_handler(boost::bind(&http_connection::handle_http_line, this, placeholders::error), allocator, THIS_THREAD_ID()));
 }
 
 void http_connection::handle_http_line(const boost::system::error_code& ec)

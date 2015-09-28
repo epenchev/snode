@@ -264,7 +264,7 @@ protected:
 class http_response_impl : public http::http_msg_base
 {
 public:
-    http_response_impl() : status_code_((std::numeric_limits<uint16_t>::max)()) { }
+    http_response_impl() : status_code_((std::numeric_limits<uint16_t>::max)()) {}
 
     http_response_impl(http::status_code code) : status_code_(code) {}
 

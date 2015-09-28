@@ -47,6 +47,10 @@ public:
 
     void stop()
     {
+        // prevent a second stop
+        if (threads_.empty() || queues_index_.empty())
+            return;
+
         for (auto iter = threads_.begin(); iter != threads_.end(); ++iter)
         {
             thread_ptr thread = *iter;

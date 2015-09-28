@@ -13,7 +13,7 @@ int main(int argc, char* argv[])
     if (!server.get_config().error())
         server.run();
     else
-        std::cout << server.get_config().error().message();
+        std::cout << server.get_config().error().message() << std::endl;
 
     return 0;
 }
