@@ -54,7 +54,9 @@ void snode_core::init()
     {
         net_service* service = service_factory::create_instance(it->name);
         if (!service)
+        {
             continue;
+        }
 
         tcp_acceptor_ptr acceptor(new boost::asio::ip::tcp::acceptor(ios));
         acceptor->open(boost::asio::ip::tcp::v4());
@@ -115,6 +117,11 @@ snode_core::~snode_core()
 threadpool& snode_core::get_threadpool()
 {
     return *threadpool_;
+}
+
+boost::asio::io_service& snode_core::get_io_service()
+{
+    return ios;
 }
 
 snode::snode_config& snode_core::get_config()

@@ -55,6 +55,8 @@ public:
 
     snode::snode_config& get_config();
 
+    /// get boost io_service object
+    boost::asio::io_service& get_io_service();
 private:
     /// internal initialization structure
 

@@ -71,9 +71,9 @@ public:
      : last_used_(-1)
     {
         auto threads = snode_core::instance().get_threadpool().threads();
-        auto count = threads.size();
-        // map listeners with the thread id's
-        for (int idx = 0; idx < count; idx++)
+        auto thread_count = threads.size();
+        // map every listener with a worker thread id
+        for (int idx = 0; idx < thread_count; idx++)
         {
             ServiceListener impl;
             listeners_[idx] = std::make_shared<net_service_listener<ServiceListener>>(impl, threads[idx]->get_id());
@@ -85,7 +85,9 @@ public:
     net_service_listener_base_ptr get_listener(thread_id_t id)
     {
         auto threads = snode_core::instance().get_threadpool().threads();
-        for (int idx = 0; idx < threads.size(); idx++)
+        auto thread_count = threads.size();
+
+        for (int idx = 0; idx < thread_count; idx++)
         {
             if (threads[idx]->get_id() == id)
             {
@@ -101,14 +103,20 @@ public:
     net_service_listener_base_ptr get_next_listener()
     {
         if (last_used_ < 0)
+        {
             last_used_ = 0;
+        }
         else
         {
             auto iter = listeners_.find(last_used_);
             if ((++iter) != listeners_.end())
+            {
                 last_used_ = iter->first;
+            }
             else
+            {
                 last_used_ = listeners_.begin()->first;
+            }
         }
         return listeners_[last_used_];
     }

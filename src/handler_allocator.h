@@ -64,6 +64,7 @@ private:
 /// Wrapper class template for handler objects to allow handler memory
 /// allocation to be customized and handler to be dispatched to a given worker thread.
 /// Calls to operator() are forwarded to the encapsulated handler.
+/// A custom allocator strategy can be specified via the Allocator template parameter.
 template <typename Handler, typename Allocator>
 class asio_handler_dispatcher
 {
@@ -77,21 +78,18 @@ public:
     template <typename Arg1>
     void operator()(Arg1 arg1)
     {
-        std::cout << "exec handler 1\n";
         handler_(arg1);
     }
 
     template <typename Arg1, typename Arg2>
     void operator()(Arg1 arg1, Arg2 arg2)
     {
-        std::cout << "exec handler 2\n";
         handler_(arg1, arg2);
     }
 
     template <typename Arg1, typename Arg2, typename Arg3>
     void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
     {
-        std::cout << "exec handler 3\n";
         handler_(arg1, arg2, arg3);
     }
 
@@ -99,6 +97,12 @@ public:
     void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
     {
         handler_(arg1, arg2, arg3, arg4);
+    }
+
+    template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
+    void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
+    {
+        handler_(arg1, arg2, arg3, arg4, arg5);
     }
 
     /// Asio hook for handler allocation
@@ -124,7 +128,9 @@ private:
 
 };
 
-// Helper function to wrap a handler object to add custom allocation.
+/// Helper function to wrap a handler object to add custom allocation.
+/// A custom allocator strategy can be specified via the Allocator template parameter,
+/// otherwise default strategy will be used.
 template <typename Handler,
           typename Allocator = snode::handler_allocator>
 inline asio_handler_dispatcher<Handler, Allocator>

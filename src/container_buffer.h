@@ -172,7 +172,9 @@ public:
     void release_impl(CharType* ptr, size_t count)
     {
         if (ptr != nullptr)
+        {
             update_current_position(current_position_ + count);
+        }
     }
 
     /// internal implementation of getn() from async_streambuf
@@ -249,7 +251,9 @@ public:
     {
         if ( ((mode & std::ios_base::in) && !this->can_read()) ||
              ((mode & std::ios_base::out) && !this->can_write()))
+        {
              return static_cast<pos_type>(traits::eof());
+        }
 
         return static_cast<pos_type>(current_position_);
     }
@@ -369,7 +373,9 @@ private:
     size_t read(CharType *ptr, size_t count, bool advance = true)
     {
         if (!can_satisfy(count))
+        {
             return 0;
+        }
 
         size_t request_size(count);
         size_t read_size = std::min(request_size, in_avail_impl());
@@ -397,7 +403,10 @@ private:
     /// Write count characters from the ptr into the stream buffer
     size_t write(const CharType *ptr, size_t count)
     {
-        if (!this->can_write() || (count == 0)) return 0;
+        if (!this->can_write() || (count == 0))
+        {
+            return 0;
+        }
 
         auto newSize = current_position_ + count;
 

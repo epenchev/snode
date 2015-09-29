@@ -153,7 +153,9 @@ http_service::http_service()
         req_handler->url_path(paths);
 
         if (paths.empty())
+        {
             continue;
+        }
 
         for (auto thread_i : threads)
         {
@@ -217,6 +219,7 @@ void http_connection::close()
 {
     close_ = true;
     auto sock = socket_.get();
+
     if (sock != nullptr)
     {
         boost::system::error_code ec;
@@ -331,6 +334,7 @@ void http_connection::handle_headers()
     std::istream request_stream(&request_buf_);
     request_stream.imbue(std::locale::classic());
     std::string header;
+
     while (std::getline(request_stream, header) && header != "\r")
     {
         auto colon = header.find(':');
@@ -376,9 +380,12 @@ void http_connection::handle_headers()
     snode::streams::producer_consumer_buffer<uint8_t> buf(512);
     request_.get_impl()->set_instream(buf.create_istream());
     request_.get_impl()->set_outstream(buf.create_ostream()/*, false*/);
+
     if (chunked_)
     {
-        boost::asio::async_read_until(*socket_, request_buf_, CRLF, boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
+        boost::asio::async_read_until(*socket_, request_buf_, CRLF,
+                  boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
+
         dispatch_request_to_listener();
         return;
     }
@@ -395,7 +402,8 @@ void http_connection::handle_headers()
     else // need to read the sent data
     {
         read_ = 0;
-        async_read_until_buffersize(std::min(ChunkSize, read_size_), boost::bind(&http_connection::handle_body, this, placeholders::error));
+        async_read_until_buffersize(std::min(ChunkSize, read_size_),
+                boost::bind(&http_connection::handle_body, this, placeholders::error));
     }
 
     dispatch_request_to_listener();
@@ -416,9 +424,15 @@ void http_connection::handle_chunked_header(const boost::system::error_code& ec)
         request_buf_.consume(CRLF.size());
         read_ += len;
         if (len == 0)
+        {
             request_.get_impl()->complete(read_);
+        }
         else
-            async_read_until_buffersize(len + 2, boost::bind(&http_connection::handle_chunked_body, this, boost::asio::placeholders::error, len));
+        {
+            async_read_until_buffersize(len + 2,
+                     boost::bind(&http_connection::handle_chunked_body,
+                             this, boost::asio::placeholders::error, len));
+        }
     }
 }
 
@@ -432,7 +446,8 @@ void http_connection::handle_chunked_body(const boost::system::error_code& ec, i
     {
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
-        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite, BIND_HANDLER(&http_connection::handle_chunked_body_buff_write));
+        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite,
+                       BIND_HANDLER(&http_connection::handle_chunked_body_buff_write));
     }
 }
 
@@ -462,7 +477,8 @@ void http_connection::handle_body(const boost::system::error_code& ec)
     {
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
-        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), std::min(request_buf_.size(), read_size_ - read_), BIND_HANDLER(&http_connection::handle_body_buff_write));
+        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()),
+                 std::min(request_buf_.size(), read_size_ - read_), BIND_HANDLER(&http_connection::handle_body_buff_write));
     }
     else  // have read request body
     {
@@ -490,9 +506,13 @@ void http_connection::async_read_until_buffersize(size_t size, const ReadHandler
 {
     auto bufsize = request_buf_.size();
     if (bufsize >= size)
+    {
         boost::asio::async_read(*socket_, request_buf_, transfer_at_least(0), handler);
+    }
     else
+    {
         boost::asio::async_read(*socket_, request_buf_, transfer_at_least(size - bufsize), handler);
+    }
 }
 
 void http_connection::dispatch_request_to_listener()
@@ -691,9 +711,13 @@ void http_connection::handle_headers_written(const http_response& response, cons
     else
     {
         if (chunked_)
+        {
             handle_write_chunked_response(response, ec);
+        }
         else
+        {
             handle_write_large_response(response, ec);
+        }
     }
 }
 
