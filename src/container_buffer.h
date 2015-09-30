@@ -115,7 +115,7 @@ public:
     void putc_impl(CharType ch, WriteHandler handler)
     {
         int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of putn() from async_streambuf
@@ -123,7 +123,7 @@ public:
     void putn_impl(CharType* ptr, size_t count, WriteHandler handler)
     {
         size_t res = this->write(ptr, count);
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of alloc() from async_streambuf
@@ -182,7 +182,7 @@ public:
     void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
     {
         int_type res = this->read(ptr, count);
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of sgetn() from async_streambuf
@@ -202,7 +202,7 @@ public:
     void bumpc_impl(ReadHandler handler)
     {
         int_type res = this->read_byte(true);
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of sbumpc() from async_streambuf
@@ -216,7 +216,7 @@ public:
     void getc_impl(ReadHandler handler)
     {
         int_type res = this->read_byte(false);
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of sgetc() from async_streambuf
@@ -231,7 +231,7 @@ public:
     void nextc_impl(ReadHandler handler)
     {
         int_type res = this->read_byte(true);
-        async_event_task::connect(handler, res);
+        async_task::connect(handler, res);
     }
 
     /// internal implementation of ungetc() from async_streambuf
@@ -241,7 +241,7 @@ public:
         /*
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
         if ( pos == (pos_type)traits::eof())
-            async_event_task::connect(handler, static_cast<int_type>(traits::eof()));
+            async_task::connect(handler, static_cast<int_type>(traits::eof()));
         int_type res = this->getc();
         */
     }

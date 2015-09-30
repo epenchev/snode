@@ -15,7 +15,7 @@ namespace snode
 {
 
 /// Schedule an execution task to some worker thread specified with a thread id. Task is executed within the given worker context.
-class async_event_task
+class async_task
 {
 public:
 

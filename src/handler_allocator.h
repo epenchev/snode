@@ -6,7 +6,9 @@
 #define _HANDLER_ALLOCATOR_H_
 
 #include <boost/aligned_storage.hpp>
+
 #include "snode_types.h"
+#include "async_task.h"
 
 namespace snode
 {
@@ -50,8 +52,8 @@ public:
 
 private:
     // disable copy
-    //handler_allocator(const handler_allocator&);
-    //void operator=(const handler_allocator&);
+    handler_allocator(const handler_allocator&);
+    void operator=(const handler_allocator&);
 
     // Storage space used for handler-based custom memory allocation.
     boost::aligned_storage<alloc_size> storage_;
@@ -70,39 +72,38 @@ class asio_handler_dispatcher
 {
 public:
     asio_handler_dispatcher(Handler h, Allocator& a, thread_id_t id)
-    :  handler_(h), allocator_(a)
+    :  handler_(h), allocator_(a), thread_id_(id)
     {
-        thread_id_ = id;
     }
 
     template <typename Arg1>
     void operator()(Arg1 arg1)
     {
-        handler_(arg1);
+        async_task::connect(handler_, arg1, thread_id_);
     }
 
     template <typename Arg1, typename Arg2>
     void operator()(Arg1 arg1, Arg2 arg2)
     {
-        handler_(arg1, arg2);
+        async_task::connect(handler_, arg1, arg2, thread_id_);
     }
 
     template <typename Arg1, typename Arg2, typename Arg3>
     void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
     {
-        handler_(arg1, arg2, arg3);
+        async_task::connect(handler_, arg1, arg2, arg3, thread_id_);
     }
 
     template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
     void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
     {
-        handler_(arg1, arg2, arg3, arg4);
+        async_task::connect(handler_, arg1, arg2, arg3, arg4, thread_id_);
     }
 
     template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
     void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
     {
-        handler_(arg1, arg2, arg3, arg4, arg5);
+        async_task::connect(handler_, arg1, arg2, arg3, arg4, arg5, thread_id_);
     }
 
     /// Asio hook for handler allocation
@@ -134,7 +135,7 @@ private:
 template <typename Handler,
           typename Allocator = snode::handler_allocator>
 inline asio_handler_dispatcher<Handler, Allocator>
-make_custom_alloc_handler(Handler h, Allocator& a, thread_id_t id)
+make_alloc_handler(Handler h, Allocator& a, thread_id_t id)
 {
     return asio_handler_dispatcher<Handler, Allocator>(h, a, id);
 }

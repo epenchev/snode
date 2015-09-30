@@ -14,12 +14,13 @@
 #include "async_streams.h"
 #include "uri_utils.h"
 #include "snode_core.h"
-#include "handler_allocator.h"
 
 using namespace boost::asio;
 using namespace boost::asio::ip;
 
 #define CRLF std::string("\r\n")
+// helper macro for creating custom allocation handler
+#define ALLOC_HANDLER(handler) make_alloc_handler(handler, allocator_, worker_id_)
 
 namespace snode
 {
@@ -195,7 +196,7 @@ http_service::http_service()
 void http_service::accept(tcp_socket_ptr sock)
 {
     auto listener = listeners_factory_.get_next_listener();
-    snode::async_event_task::connect(&net_service_listener_base::on_accept, listener, sock, listener->thread_id());
+    snode::async_task::connect(&net_service_listener_base::on_accept, listener, sock, listener->thread_id());
 }
 
 http_req_handler* http_service::get_req_handler(const std::string& url_path)
@@ -205,7 +206,7 @@ http_req_handler* http_service::get_req_handler(const std::string& url_path)
 
 void http_listener::do_accept(tcp_socket_ptr sock)
 {
-    http_conn_ptr conn(new http_connection(sock, dynamic_cast<http_service*>(http_service::instance()), this));
+    http_conn_ptr conn(new http_connection(sock, dynamic_cast<http_service*>(http_service::instance()), this, THIS_THREAD_ID()));
     connections_.insert(conn);
 }
 
@@ -237,11 +238,8 @@ void http_connection::start_request_response()
 
     // Wait for either double newline or a char which is not in the range [32-127] which suggests SSL handshaking.
     // For the SSL server support this line might need to be changed. Now, this prevents from hanging when SSL client tries to connect.
-    // async_read_until(*socket_, request_buf_, crlf_nonascii_searcher, boost::bind(&http_connection::handle_http_line, this, placeholders::error));
-
-    snode::handler_allocator allocator;
     async_read_until(*socket_, request_buf_, crlf_nonascii_searcher,
-                    make_custom_alloc_handler(boost::bind(&http_connection::handle_http_line, this, placeholders::error), allocator, THIS_THREAD_ID()));
+            ALLOC_HANDLER(boost::bind(&http_connection::handle_http_line, this, placeholders::error)));
 }
 
 void http_connection::handle_http_line(const boost::system::error_code& ec)
@@ -384,7 +382,7 @@ void http_connection::handle_headers()
     if (chunked_)
     {
         boost::asio::async_read_until(*socket_, request_buf_, CRLF,
-                  boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
+                ALLOC_HANDLER(boost::bind(&http_connection::handle_chunked_header, this, placeholders::error)));
 
         dispatch_request_to_listener();
         return;
@@ -403,7 +401,7 @@ void http_connection::handle_headers()
     {
         read_ = 0;
         async_read_until_buffersize(std::min(ChunkSize, read_size_),
-                boost::bind(&http_connection::handle_body, this, placeholders::error));
+                ALLOC_HANDLER(boost::bind(&http_connection::handle_body, this, placeholders::error)));
     }
 
     dispatch_request_to_listener();
@@ -430,8 +428,7 @@ void http_connection::handle_chunked_header(const boost::system::error_code& ec)
         else
         {
             async_read_until_buffersize(len + 2,
-                     boost::bind(&http_connection::handle_chunked_body,
-                             this, boost::asio::placeholders::error, len));
+                    ALLOC_HANDLER(boost::bind(&http_connection::handle_chunked_body, this, placeholders::error, len)));
         }
     }
 }
@@ -457,7 +454,7 @@ void http_connection::handle_chunked_body_buff_write(size_t count)
     {
         request_buf_.consume(2 + count); // clear the buffer
         boost::asio::async_read_until(*socket_, request_buf_, CRLF,
-               boost::bind(&http_connection::handle_chunked_header, this, placeholders::error));
+                ALLOC_HANDLER(boost::bind(&http_connection::handle_chunked_header, this, placeholders::error)));
     }
     else
     {
@@ -492,7 +489,8 @@ void http_connection::handle_body_buff_write(size_t count)
     {
         read_ += count;
         request_buf_.consume(count);
-        async_read_until_buffersize(std::min(ChunkSize, read_size_ - read_), boost::bind(&http_connection::handle_body, this, placeholders::error));
+        async_read_until_buffersize(std::min(ChunkSize, read_size_ - read_),
+                ALLOC_HANDLER(boost::bind(&http_connection::handle_body, this, placeholders::error)));
     }
     else
     {
@@ -618,7 +616,8 @@ void http_connection::async_process_response(http_response& response)
         os << header.first << ": " << header.second << CRLF;
     }
     os << CRLF;
-    boost::asio::async_write(*socket_, response_buf_, boost::bind(&http_connection::handle_headers_written, this, response, placeholders::error));
+    boost::asio::async_write(*socket_, response_buf_,
+            ALLOC_HANDLER(boost::bind(&http_connection::handle_headers_written, this, response, placeholders::error)));
 }
 
 void http_connection::cancel_sending_response_with_error(const http_response& response, http::error_code& ec)
@@ -663,8 +662,8 @@ void http_connection::handle_chunked_response_buff_read(size_t count, uint8_t* m
         response_buf_.commit(count + snode::http::chunked_encoding::additional_encoding_space);
         response_buf_.consume(offset);
         boost::asio::async_write(*socket_, response_buf_,
-                 boost::bind(count == 0 ? &http_connection::handle_response_written : &http_connection::handle_write_chunked_response,
-                               this, response, placeholders::error));
+                ALLOC_HANDLER(boost::bind(count == 0 ? &http_connection::handle_response_written : &http_connection::handle_write_chunked_response,
+                                          this, response, placeholders::error)));
     }
 }
 
@@ -697,7 +696,8 @@ void http_connection::handle_large_response_buff_read(size_t count, http_respons
 
     write_ += count;
     response_buf_.commit(count);
-    boost::asio::async_write(*socket_, response_buf_, boost::bind(&http_connection::handle_write_large_response, this, response, placeholders::error));
+    boost::asio::async_write(*socket_, response_buf_,
+            ALLOC_HANDLER(boost::bind(&http_connection::handle_write_large_response, this, response, placeholders::error)));
 }
 
 void http_connection::handle_headers_written(const http_response& response, const boost::system::error_code& ec)

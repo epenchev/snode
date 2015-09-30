@@ -222,7 +222,7 @@ public:
         }
         else
         {
-            async_event_task::connect(handler, data_available_);
+            async_task::connect(handler, data_available_);
         }
     }
 
@@ -553,7 +553,7 @@ public:
         }
         else
         {
-            async_event_task::connect(handler, boost::ref(response_));
+            async_task::connect(handler, boost::ref(response_));
         }
     }
 

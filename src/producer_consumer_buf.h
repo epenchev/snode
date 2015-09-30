@@ -96,7 +96,7 @@ namespace streams
         }
 
         /// internal implementation of commit() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         void commit_impl(size_t count)
         {
             // The count does not reflect the actual size of the block.
@@ -112,7 +112,7 @@ namespace streams
         }
 
         /// internal implementation of acquire() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         bool acquire_impl(CharType*& ptr, size_t& count)
         {
             count = 0;
@@ -139,7 +139,7 @@ namespace streams
         }
 
         /// internal implementation of release() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         void release_impl(CharType* ptr, size_t count)
         {
             if (ptr == nullptr)
@@ -154,7 +154,7 @@ namespace streams
         }
 
         /// internal implementation of sync() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         void sync_impl()
         {
             synced_ = this->in_avail();
@@ -166,7 +166,7 @@ namespace streams
         void putc_impl(CharType ch, WriteHandler handler)
         {
             int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
-            async_event_task::connect(handler, res);
+            async_task::connect(handler, res);
         }
 
         /// internal implementation of putn() from async_streambuf
@@ -174,7 +174,7 @@ namespace streams
         void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
         {
             size_t res = this->write(ptr, count);
-            async_event_task::connect(handler, res);
+            async_task::connect(handler, res);
         }
 
         /// internal implementation of getn() from async_streambuf
@@ -193,7 +193,7 @@ namespace streams
         }
 
         /// internal implementation of scopy() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         size_t scopy_impl(CharType* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count, false) : (size_t)traits::requires_async();
@@ -209,7 +209,7 @@ namespace streams
         }
 
         /// internal implementation of sbumpc() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         int_type sbumpc_impl()
         {
             return can_satisfy(1) ? this->read_byte(true) : traits::requires_async();
@@ -225,7 +225,7 @@ namespace streams
         }
 
         /// internal implementation of sgetc() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_event_task::connect()
+        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
         int_type sgetc_impl()
         {
             return can_satisfy(1) ? this->read_byte(false) : traits::requires_async();
@@ -244,7 +244,7 @@ namespace streams
         template<typename ReadHandler>
         void ungetc_impl(ReadHandler handler)
         {
-            async_event_task::connect(handler, static_cast<int_type>(traits::eof()));
+            async_task::connect(handler, static_cast<int_type>(traits::eof()));
         }
 
         void close_read_impl()
@@ -372,12 +372,12 @@ namespace streams
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
                     size_t countread = parent_.read(bufptr_, count_);
-                    async_event_task::connect(&async_streambuf_op_base<CharType>::complete_size, completion_op_, countread);
+                    async_task::connect(&async_streambuf_op_base<CharType>::complete_size, completion_op_, countread);
                 }
                 else
                 {
                     int_type value = parent_.read_byte();
-                    async_event_task::connect(&async_streambuf_op_base<CharType>::complete_ch, completion_op_, value);
+                    async_task::connect(&async_streambuf_op_base<CharType>::complete_ch, completion_op_, value);
                     completion_op_->complete_ch(value);
                 }
             }

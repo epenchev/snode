@@ -14,6 +14,7 @@
 #include "net_service.h"
 #include "net_service_helpers.h"
 #include "snode_types.h"
+#include "handler_allocator.h"
 
 namespace snode
 {
@@ -27,6 +28,7 @@ class http_listener;
 class http_connection :  public boost::enable_shared_from_this<http_connection>
 {
 private:
+    snode::handler_allocator allocator_; // using the default allocator
     tcp_socket_ptr socket_;
     boost::asio::streambuf request_buf_;
     boost::asio::streambuf response_buf_;
@@ -37,10 +39,11 @@ private:
     size_t read_size_, write_size_;
     bool close_;
     bool chunked_;
+    thread_id_t worker_id_;
     
 public:
-    http_connection(tcp_socket_ptr socket, http_service* service, http_listener* listener) : socket_(socket), request_buf_()
-    , response_buf_(), p_service_(service), p_listener_(listener)
+    http_connection(tcp_socket_ptr socket, http_service* service, http_listener* listener, thread_id_t id) : socket_(socket), request_buf_()
+    , response_buf_(), p_service_(service), p_listener_(listener), worker_id_(id)
     {
         start_request_response();
     }

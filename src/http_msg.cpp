@@ -91,7 +91,7 @@ void http_msg_base::set_body(streambuf_type::istream_type& instream, std::size_t
     while (!data_ready_handlers_.empty())
     {
         auto event_op = data_ready_handlers_.front();
-        async_event_task::connect(&data_ready_op::data_ready, event_op, data_available_);
+        async_task::connect(&data_ready_op::data_ready, event_op, data_available_);
         data_ready_handlers_.pop();
     }
 }
@@ -324,7 +324,7 @@ void http_request_impl::reply_impl(http::http_response& response)
      {
          auto op = response_handlers_.front();
          // We have enough data to satisfy this request
-         async_event_task::connect(&response_ready_op::response_ready, op, boost::ref(response_));
+         async_task::connect(&response_ready_op::response_ready, op, boost::ref(response_));
          response_handlers_.pop();
      }
 }
@@ -343,7 +343,7 @@ void http_request_impl::response_send_complete(http::error_code& err)
     while (!response_complete_handlers_.empty())
     {
         auto op = response_complete_handlers_.front();
-        async_event_task::connect(&response_complete_op::response_complete, op, err);
+        async_task::connect(&response_complete_op::response_complete, op, err);
         response_complete_handlers_.pop();
     }
 }

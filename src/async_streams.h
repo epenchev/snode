@@ -312,7 +312,7 @@ namespace streams
                 throw std::runtime_error(utils::s_in_streambuf_msg);
 
             if (count == 0)
-                async_event_task::connect(handler, 0);
+                async_task::connect(handler, 0);
             else
                 get_impl()->putn_impl(ptr, count, handler);
         }
@@ -404,7 +404,7 @@ namespace streams
                 throw std::runtime_error(utils::s_out_stream_msg);
 
             if (count == 0)
-                async_event_task::connect(handler, 0);
+                async_task::connect(handler, 0);
             else
                 get_impl()->getn_impl(ptr, count, handler);
         }
@@ -737,7 +737,7 @@ namespace streams
                     source->release(data, count);
 
                 // signal parent, operation is complete
-                async_event_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
+                async_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
             }
 
             void post_read(size_t count, async_ostream<CharType, Impl>* parent, std::shared_ptr<CharType> buf)
@@ -758,7 +758,7 @@ namespace streams
             {
                 // signal parent, write operation is complete
                 if (parent && count)
-                    async_event_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
+                    async_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
             }
 
             // bytes to be written to the stream
@@ -1074,7 +1074,7 @@ namespace streams
                 if (parent)
                 {
                     read_count_ = count;
-                    async_event_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
+                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
                 }
             }
 
@@ -1145,7 +1145,7 @@ namespace streams
                     if (eof_or_delim_)
                     {
                         read_count_ = count;
-                        async_event_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
+                        async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
                     }
                     else
                     {
@@ -1235,7 +1235,7 @@ namespace streams
                     if (eof_or_delim_)
                     {
                         read_count_ = count;
-                        async_event_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
+                        async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
                     }
                     else
                     {
@@ -1266,7 +1266,7 @@ namespace streams
                 else
                 {
                     read_count_ = helper->total;;
-                    async_event_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
+                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
                 }
             }
 
@@ -1283,7 +1283,7 @@ namespace streams
                 else
                 {
                     read_count_ = helper->total;
-                    async_event_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
+                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
                 }
             }
 
