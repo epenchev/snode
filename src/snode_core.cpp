@@ -52,7 +52,7 @@ void snode_core::init()
     threadpool_ = new threadpool(config_.threads());
     for (auto it = config_.services().begin(); it != config_.services().end(); it++)
     {
-        net_service* service = service_factory::create_instance(it->name);
+        net_service_base* service = service_factory::create_instance(it->name);
         if (!service)
         {
             continue;
@@ -92,7 +92,7 @@ void snode_core::handle_accept(tcp_socket_ptr sock, tcp_acceptor_ptr acceptor, c
         try
         {
             // service is responsible to dispatch this to a worker thread
-            net_service* service = services_[acceptor->local_endpoint().port()];
+            net_service_base* service = services_[acceptor->local_endpoint().port()];
             service->accept(sock);
 
             // continue accepting new connections

@@ -27,7 +27,7 @@ namespace http
 {
 
 // register http service into the global net_service factory
-snode_core::service_factory::registrator<http_service> http_service_reg("http");
+snode_core::service_factory::registrator<http_service_factory_wrapper> http_service_reg("http");
 
 // Avoid using boost regex in the async_read_until() call.
 // This class replaces the regex "\r\n\r\n|[\x00-\x1F]|[\x80-\xFF]"

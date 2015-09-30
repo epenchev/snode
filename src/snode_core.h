@@ -30,7 +30,7 @@ private:
     snode::threadpool*                      threadpool_;         /// handling all I/O and event messaging tasks.
     std::list<tcp_acceptor_ptr>             acceptors_;          /// socket acceptors listening for incoming connections.
     snode_config                            config_;             /// global configuration.
-    std::map<unsigned short, net_service*>  services_;           /// network port -> net_service object map association.
+    std::map<unsigned short, net_service_base*>  services_;           /// network port -> net_service object map association.
 
 public:
     /// server_controller is a singleton, can be accessed only with this method.
@@ -41,7 +41,7 @@ public:
     }
 
     /// Factory for registering all the server handler classes.
-    typedef reg_factory<net_service> service_factory;
+    typedef reg_factory<net_service_base> service_factory;
 
     void init();
 

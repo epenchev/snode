@@ -152,7 +152,7 @@ public:
 };
 
 /// HTTP service class.
-class http_service : public net_service
+class http_service
 {
 public:
     /// Factory for registering all the http_req_handler classes.
@@ -162,23 +162,17 @@ public:
     virtual ~http_service() {}
 
     /// Entry point for every network service where a new connection is accepted and handled.
-    virtual void accept(tcp_socket_ptr sock);
-
-    static http_service* instance()
-    {
-        return static_cast<http_service*>(http_service::create_object());
-    }
-
-    /// Factory method.
-    static net_service* create_object()
-    {
-        static http_service s_http_service;
-        return &s_http_service;
-    }
+    void accept(tcp_socket_ptr sock);
 
     /// Get HTTP request handler object for registered to handle the given (url_path)
     /// If there are no handlers registered to handle this URL a NULL is returned.
     http_req_handler* get_req_handler(const std::string& url_path);
+
+    static http_service* instance()
+    {
+        static http_service s_http_service;
+        return &s_http_service;
+    }
 
 private:
     typedef boost::shared_ptr<http_req_handler> req_handler_ptr;
@@ -187,6 +181,18 @@ private:
     std::map<thread_id_t, std::map<std::string, req_handler_ptr>> handlers_;
 
     net_service_listener_factory<http_listener> listeners_factory_;
+};
+
+/// Wrapper class to register with the service factory
+class http_service_factory_wrapper
+{
+public:
+    /// Factory method.
+    static net_service_base* create_object()
+    {
+        static net_service_impl<http_service> s_service_impl(*http_service::instance());
+        return &s_service_impl;
+    }
 };
 
 }}
