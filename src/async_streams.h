@@ -158,6 +158,42 @@ namespace streams
         typedef async_ostream<CharType, Impl> ostream_type;
         typedef async_istream<CharType, Impl> istream_type;
 
+    protected:
+        // The in/out mode for the buffer
+        bool stream_can_read_, stream_can_write_, stream_read_eof_, alloced_;
+
+        /// Get the internal implementation of the async_streambuf core functions.
+        /// Returns the object holding the current implementation.
+        inline Impl* get_impl()
+        {
+            return static_cast<Impl*>(this);
+        }
+
+        inline const Impl* get_impl() const
+        {
+            return static_cast<const Impl*>(this);
+        }
+
+        /// The real read head close operation, implementation should override it if there is any resource to be released.
+        void close_read()
+        {
+            stream_can_read_ = false;
+        }
+
+        /// The real write head close operation, implementation should override it if there is any resource to be released.
+        void close_write()
+        {
+            stream_can_write_ = false;
+        }
+
+        /// Set EOF states for sync read
+        int_type check_sync_read_eof(int_type ch)
+        {
+            stream_read_eof_ = ch == traits::eof();
+            return ch;
+        }
+
+    public:
         /// Default constructor, (mode) the I/O mode (in or out) of the buffer.
         async_streambuf(std::ios_base::openmode mode)
         {
@@ -216,7 +252,7 @@ namespace streams
         /// Gets the stream buffer size for in or out direction, if one has been set.
         size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
         {
-            return get_impl()->buffer_size_impl(direction);
+           return get_impl()->buffer_size_impl(direction);
         }
 
         /// Sets the stream buffer implementation to buffer or not buffer for the given direction (in or out).
@@ -227,7 +263,7 @@ namespace streams
 
         /// For any input stream, returns the number of characters that are immediately available to be consumed without blocking
         /// May be used in conjunction with sbumpc() method to read data without using async tasks.
-        size_t in_avail()
+        size_t in_avail() const
         {
             return get_impl()->in_avail_impl();
         }
@@ -236,7 +272,7 @@ namespace streams
         /// Returns the current position. EOF if the operation fails.
         /// Some streams may have separate write and read cursors.
         /// For such streams, the direction parameter defines whether to move the read or the write cursor.</remarks>
-        pos_type getpos(std::ios_base::openmode direction) //const
+        pos_type getpos(std::ios_base::openmode direction) const
         {
             return get_impl()->getpos_impl();
         }
@@ -274,14 +310,6 @@ namespace streams
                 get_impl()->close_write_impl();
         }
 
-        /// Closes the stream buffer for the I/O mode (in or out) with an exception.
-        void close(std::ios_base::openmode mode, std::exception_ptr eptr)
-        {
-            if (current_ex_ == nullptr)
-                current_ex_ = eptr;
-            return close(mode);
-        }
-
         /// is_eof() is used to determine whether a read head has reached the end of the buffer.
         bool is_eof() const
         {
@@ -301,7 +329,8 @@ namespace streams
             get_impl()->putc_impl(ch, handler);
         }
 
-        /// Writes a number (count) of characters to the stream buffer from source memory (ptr).
+        /// Writes a number (count) of characters to the stream buffer from source memory (ptr),
+        /// the contents of the memory pointed by ptr is copied not the pointer itself.
         /// (handler) is the handler to be called when the write operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the byte count written or 0 if the write operation failed.
@@ -335,8 +364,6 @@ namespace streams
         /// This is a synchronous operation, but is guaranteed to never block.
         int_type sbumpc()
         {
-            if ( !(current_ex_ == nullptr) )
-                std::rethrow_exception(current_ex_);
             if (!can_read())
                 return traits::eof();
             return check_sync_read_eof(get_impl()->sbumpc_impl());
@@ -360,8 +387,6 @@ namespace streams
         /// This is a synchronous operation, but is guaranteed to never block.
         int_type sgetc()
         {
-            if ( !(current_ex_ == nullptr) )
-                std::rethrow_exception(current_ex_);
             if (!can_read())
                 return traits::eof();
             return check_sync_read_eof(get_impl()->sgetc_impl());
@@ -403,7 +428,7 @@ namespace streams
             if (!can_read())
                 throw std::runtime_error(utils::s_out_stream_msg);
 
-            if (count == 0)
+            if (!count)
                 async_task::connect(handler, 0);
             else
                 get_impl()->getn_impl(ptr, count, handler);
@@ -414,11 +439,8 @@ namespace streams
         /// This is a synchronous operation, but is guaranteed to never block.
         size_t scopy(CharType* ptr, size_t count)
         {
-            if ( !(current_ex_ == nullptr) )
-                std::rethrow_exception(current_ex_);
             if (!can_read())
                 return 0;
-
             return get_impl()->scopy_impl(ptr, count);
         }
 
@@ -426,19 +448,8 @@ namespace streams
         void sync()
         {
             if (!can_write())
-            {
-                if (current_ex_ == nullptr)
-                    throw std::runtime_error(utils::s_out_streambuf_msg);
-                else
-                    throw current_ex_;
-            }
+                throw std::runtime_error(utils::s_out_streambuf_msg);
             get_impl()->sync_impl();
-        }
-
-        /// Retrieves the stream buffer exception_ptr if it has been set otherwise nullptr will be returned.
-        std::exception_ptr exception() const
-        {
-            return current_ex_;
         }
 
         //
@@ -454,6 +465,7 @@ namespace streams
         //
 
         /// Allocates a contiguous block of memory of (count) bytes and returns it. Returns nullptr on error or if method is not supported.
+        /// Throws exception if buffer is already allocated
         CharType* alloc(size_t count)
         {
             if (alloced_)
@@ -469,6 +481,7 @@ namespace streams
 
         /// Submits a block already allocated by the stream buffer.
         /// (count) The number of characters to be committed.
+        /// Throws exception if buffer is not allocated
         void commit(size_t count)
         {
             if (!alloced_)
@@ -501,42 +514,84 @@ namespace streams
         {
             get_impl()->release_impl(ptr, count);
         }
-
-    protected:
-        std::exception_ptr current_ex_;
-
-        // The in/out mode for the buffer
-        bool stream_can_read_, stream_can_write_, stream_read_eof_, alloced_;
-
-        inline Impl* get_impl()
-        {
-            return static_cast<Impl*>(this);
-        }
-
-        /// The real read head close operation, implementation should override it if there is any resource to be released.
-        void close_read()
-        {
-            stream_can_read_ = false;
-        }
-
-        /// The real write head close operation, implementation should override it if there is any resource to be released.
-        void close_write()
-        {
-            stream_can_write_ = false;
-        }
-
-        /// Set EOF states for sync read
-        int_type check_sync_read_eof(int_type ch)
-        {
-            stream_read_eof_ = ch == traits::eof();
-            return ch;
-        }
     };
 
     /// Base class for all asynchronous output streams.
     template<typename CharType, typename Impl>
     class async_ostream
     {
+    protected:
+
+        void verify_and_throw(const char* msg) const
+        {
+            if ( !buffer_->can_write() )
+                throw std::runtime_error(msg);
+        }
+
+        /// async_ostream's write completion handler to be executed
+        /// when a write operation on the underlying buffer is complete.
+        /// Template parameter CompletionHandler is the user supplied handler, to be executed
+        /// when write() to the async_ostream object is complete.
+        template<typename CompletionHandler>
+        struct streambuf_write_handler
+        {
+            streambuf_write_handler(CompletionHandler handler) : handler_(handler)
+            {}
+
+            template<typename SourceBuffImpl>
+            void on_write(size_t count, async_streambuf<CharType, SourceBuffImpl>* source)
+            {
+                CharType* data;
+                source->acquire(data, count);
+                if (data != nullptr)
+                    source->release(data, count);
+                // execute user's completion handler
+                handler_(count);
+            }
+            // user supplied completion handler
+            CompletionHandler handler_;
+        };
+
+        /// async_ostream's read completion handler to be executed
+        /// when a read operation on a source buffer is complete.
+        /// Template parameter CompletionHandler is the user supplied handler, to be executed
+        /// when write() to the async_ostream object is complete.
+        template<typename CompletionHandler>
+        struct streambuf_read_handler
+        {
+            streambuf_read_handler(CompletionHandler handler) : handler_(handler)
+            {}
+
+            void on_read(size_t count, async_ostream<CharType, Impl>* ostream, std::shared_ptr<CharType> buf)
+            {
+                if (count)
+                {
+                    CharType* data;
+                    const bool acquired = ostream->streambuf()->acquire(data, count);
+                    // data is already allocated in the source, just committing.
+                    if (acquired)
+                    {
+                        ostream->streambuf()->commit(count);
+                        handler_(count);
+                    }
+                    else if (buf)
+                    {
+                        ostream->streambuf()->putn(buf.get(), count,
+                           std::bind(&streambuf_read_handler<CompletionHandler>::on_write, *this, count, buf));
+                    }
+                }
+            }
+
+            void on_write(size_t count, std::shared_ptr<CharType> buf)
+            {
+                // execute user's completion handler and release buf
+                handler_(count);
+            }
+            // user supplied completion handler
+            CompletionHandler handler_;
+        };
+        async_streambuf<CharType, Impl>* buffer_;
+
     public:
         typedef ::snode::streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
@@ -545,16 +600,17 @@ namespace streams
         typedef typename ::snode::streams::async_streambuf<CharType, Impl> streambuf_type;
 
         /// Default constructor
-        async_ostream() {}
+        async_ostream() : buffer_(nullptr)
+        {}
 
         /// Copy constructor
-        async_ostream(const async_ostream<CharType, Impl>& other) : requests_(other.requests_), buffer_(other.buffer_) {}
+        async_ostream(const async_ostream<CharType, Impl>& other) : buffer_(other.buffer_)
+        {}
 
         /// Assignment operator
         async_ostream& operator =(const async_ostream<CharType, Impl>& other)
         {
             buffer_ = other.buffer_;
-            requests_ = other.requests_;
             return *this;
         }
 
@@ -603,14 +659,12 @@ namespace streams
             if (count == 0)
                 return;
 
-            async_streambuf_op<CharType, WriteHandler> handler_op(handler);
-            std::shared_ptr<write_context> context(std::make_shared<write_context>(handler_op, count));
-            requests_.insert(context);
-
             auto data = buffer_->alloc(count);
             if ( data != nullptr )
             {
-                source.getn(data, count, boost::bind(&async_ostream::write_context::post_read, _1, this, data));
+                streambuf_read_handler<WriteHandler> completion_handler(handler);
+                source.getn(data, count, std::bind(&streambuf_read_handler<WriteHandler>::on_read, completion_handler,
+                                                    std::placeholders::_1, this, nullptr));
             }
             else
             {
@@ -618,7 +672,9 @@ namespace streams
                 const bool acquired = source.acquire(data, available);
                 if ( available >= count )
                 {
-                    buffer_->putn(data, count, boost::bind(&async_ostream::write_context::post_write<BufferImpl>, _1, this, source));
+                    streambuf_write_handler<WriteHandler> completion_handler(handler);
+                    buffer_->putn(data, count, std::bind(&streambuf_write_handler<WriteHandler>::on_write,
+                                                            completion_handler, std::placeholders::_1, source));
                 }
                 else
                 {
@@ -626,8 +682,10 @@ namespace streams
                     if (acquired)
                         source.release(data, 0);
 
-                    std::shared_ptr<CharType> buf(new CharType[count], [](CharType* buf) { delete [] buf; });
-                    source.getn(buf.get(), count, boost::bind(&async_ostream::write_context::post_read, _1, this, buf));
+                    auto buf = std::make_shared<CharType>((size_t)count);
+                    streambuf_read_handler<WriteHandler> completion_handler(handler);
+                    source.getn(buf.get(), count, std::bind(&streambuf_read_handler<WriteHandler>::on_read,
+                                                     completion_handler, std::placeholders::_1, this, buf));
                 }
             }
         }
@@ -718,72 +776,6 @@ namespace streams
         /// Get the underlying stream buffer.
         /// Returns the underlying stream buffer.
         streambuf_type& streambuf() { return *buffer_; }
-
-    protected:
-        /// Internal completion handler to handle the internal streambuf async calls.
-        class write_context : public std::enable_shared_from_this<write_context>
-        {
-        public:
-            write_context(async_streambuf_op_base<CharType> op, size_t count) : callback_op_(op), count_(count)
-            {
-            }
-
-            template<typename BuffImpl>
-            void post_write(size_t count, async_ostream<CharType, Impl>* parent, async_streambuf<CharType, BuffImpl>* source)
-            {
-                CharType* data;
-                source->acquire(data, count);
-                if (data != nullptr)
-                    source->release(data, count);
-
-                // signal parent, operation is complete
-                async_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
-            }
-
-            void post_read(size_t count, async_ostream<CharType, Impl>* parent, std::shared_ptr<CharType> buf)
-            {
-                if (count)
-                {
-                    CharType* data;
-                    const bool acquired = parent->buffer_->acquire(data, count);
-                    // data is already allocated in the source, just committing.
-                    if (acquired)
-                        parent->buffer_->commit(count);
-                    else if (buf)
-                        parent->buffer_->putn(buf.get(), count, BIND_HANDLER(&write_context::on_write_complete, parent));
-                }
-            }
-
-            void on_write_complete(size_t count, async_ostream<CharType, Impl>* parent)
-            {
-                // signal parent, write operation is complete
-                if (parent && count)
-                    async_task::connect(&async_ostream::post_write_complete, parent, this->shared_from_this());
-            }
-
-            // bytes to be written to the stream
-            size_t count_;
-            // user provided handler executed when write is complete
-            async_streambuf_op_base<CharType> callback_op_;
-        };
-
-        void post_write_complete(std::shared_ptr<write_context> context)
-        {
-            context->callback_op_(context->count_);
-            requests_.erase(context);
-        }
-
-        void verify_and_throw(const char* msg) const
-        {
-            if ( !(buffer_->exception() == nullptr) ) // check the instructions set, this is the original !!!
-                std::rethrow_exception(buffer_->exception());
-            if ( !buffer_->can_write() )
-                throw std::runtime_error(msg);
-        }
-
-        friend class write_context;
-        std::set<std::shared_ptr<write_context>> requests_;
-        async_streambuf<CharType, Impl>* buffer_;
     };
 
     /// Base interface for all asynchronous input streams.
@@ -1301,8 +1293,6 @@ namespace streams
 
         void verify_and_throw(const char *msg) const
         {
-            if ( buffer_->exception() != nullptr )
-                std::rethrow_exception(buffer_->exception());
             if ( !buffer_->can_read() )
                 throw std::runtime_error(msg);
         }
