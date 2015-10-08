@@ -781,12 +781,31 @@ namespace streams
     template<typename CharType, typename Impl>
     class async_istream
     {
+    public:
+        typedef ::snode::streams::char_traits<CharType> traits;
+        typedef typename traits::int_type int_type;
+        typedef typename traits::pos_type pos_type;
+        typedef typename traits::off_type off_type;
+
     protected:
         void verify_and_throw(const char *msg) const
         {
             if ( !buffer_->can_read() )
                 throw std::runtime_error(msg);
         }
+
+        static const size_t buf_size_ = 16*1024;
+        struct read_helper
+        {
+            read_helper() : total(0), write_pos(0)
+            {}
+
+            size_t total;
+            CharType outbuf[buf_size_];
+            size_t write_pos;
+
+            bool is_full() const { return write_pos == buf_size_; }
+        };
 
         /// stream buffer object associated with this stream
         async_streambuf<CharType, Impl>* buffer_;
@@ -854,12 +873,120 @@ namespace streams
             CompletionHandler handler_;
         };
 
-    public:
-        typedef ::snode::streams::char_traits<CharType> traits;
-        typedef typename traits::int_type int_type;
-        typedef typename traits::pos_type pos_type;
-        typedef typename traits::off_type off_type;
+        /// read_to_delim() internal implementation, encapsulates all async_streambuf function calls.
+        /// Template parameter CompletionHandler is the user supplied handler to be executed
+        /// when the operation is complete.
+        template<typename CompletionHandler>
+        struct delim_read_impl
+        {
+            delim_read_impl(CompletionHandler handler)
+              : eof_or_delim_(false), handler_(handler), helper_(std::make_shared<read_helper>())
+            {}
 
+            template<typename BufferImpl>
+            void read_to_delim_impl(int_type delim, async_istream<CharType, Impl>* istream, async_streambuf<CharType, BufferImpl>* target)
+            {
+                while (istream->streambuf()->in_avail() > 0)
+                {
+                    int_type ch = istream->streambuf()->sbumpc();
+                    int_type req_async = traits::requires_async();
+                    if (ch == req_async)
+                    {
+                        istream->streambuf()->bumpc(std::bind(&delim_read_impl<CompletionHandler>::on_read,
+                                *this, std::placeholders::_1, delim, istream, target));
+                        break;
+                    }
+
+                    if (ch == traits::eof() || ch == delim)
+                    {
+                        eof_or_delim_ = true;
+                        target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
+                                *this, std::placeholders::_1, delim, istream, target));
+                        break;
+                    }
+
+                    helper_->outbuf[helper_->write_pos] = static_cast<CharType>(ch);
+                    helper_->write_pos += 1;
+
+                    if (helper_->is_full())
+                    {
+                        target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
+                                *this, std::placeholders::_1, delim, istream, target));
+                        break;
+                    }
+                }
+            }
+
+            template<typename BufferImpl>
+            void on_read(int_type ch, int_type delim, async_istream<CharType, Impl>* istream,
+                         async_streambuf<CharType, BufferImpl>* target)
+            {
+                if (ch == traits::eof() || ch == delim)
+                {
+                    eof_or_delim_ = true;
+                    target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
+                            *this, std::placeholders::_1, delim, istream, target));
+                }
+                else
+                {
+                    helper_->outbuf[helper_->write_pos] = static_cast<CharType>(ch);
+                    helper_->write_pos += 1;
+
+                    if (helper_->is_full())
+                    {
+                        target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
+                                *this, std::placeholders::_1, delim, istream, target));
+                    }
+                    else
+                    {
+                        // continue looping no delimiter found
+                        read_to_delim_impl(delim, istream, target);
+                    }
+                }
+            }
+
+            template<typename BufferImpl>
+            void on_write(size_t count, int_type delim, async_istream<CharType, Impl>* istream,
+                          async_streambuf<CharType, BufferImpl>* target)
+            {
+                if (count)
+                {
+                    // flush to target buffer
+                    helper_->total += count;
+                    helper_->write_pos = 0;
+                    target->sync();
+
+                    if (eof_or_delim_)
+                        handler_(count);
+                    else
+                        read_to_delim_impl(delim, istream, target);
+                }
+            }
+
+            bool eof_or_delim_;
+            CompletionHandler handler_;
+            std::shared_ptr<read_helper> helper_;
+        };
+
+        /// read_line() internal implementation, encapsulates all async_streambuf function calls.
+        /// Template parameter CompletionHandler is the user supplied handler to be executed
+        /// when the operation is complete.
+        template<typename CompletionHandler>
+        struct line_read_impl
+        {
+
+        };
+
+        /// read_to_end() internal implementation, encapsulates all async_streambuf function calls.
+        /// Template parameter CompletionHandler is the user supplied handler to be executed
+        /// when the operation is complete.
+        template<typename CompletionHandler>
+        struct end_read_impl
+        {
+
+        };
+
+    public:
         /// Default constructor
         async_istream() : buffer_(nullptr)
         {}
@@ -966,18 +1093,15 @@ namespace streams
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
-        template<typename ReadHandler>
-        void read_to_delim(async_streambuf<CharType, Impl>& target, int_type delim, ReadHandler handler)
+        template<typename ReadHandler, typename BufferImpl>
+        void read_to_delim(async_streambuf<CharType, BufferImpl>& target, int_type delim, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
             if ( !target.can_write() )
                 throw std::runtime_error("target not set up for output of data");
 
-            std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
-            std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
-            requests_.insert(context);
-            context->do_read_to_delim(delim, this, &target, helper);
+            delim_read_impl<ReadHandler> impl(handler);
+            impl.read_to_delim_impl(delim, this, &target);
         }
 
         /// Read until reaching a newline character. The newline is not included in the (target) an asynchronous stream buffer supporting write operations.
@@ -992,11 +1116,13 @@ namespace streams
             if ( !target.can_write() )
                 throw std::runtime_error("target not set up for receiving data");
 
+            /*
             std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
             async_streambuf_op<CharType, ReadHandler> handler_op(handler);
             std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
             requests_.insert(context);
             context->do_read_line(this, &target, helper);
+            */
         }
 
         /// Read until reaching the end of the stream.
@@ -1071,23 +1197,6 @@ namespace streams
         }
 
     protected:
-        static const size_t buf_size_ = 16*1024;
-
-        struct read_helper
-        {
-            size_t total;
-            CharType outbuf[buf_size_];
-            size_t write_pos;
-
-            bool is_full() const
-            {
-                return write_pos == buf_size_;
-            }
-
-            read_helper() : total(0), write_pos(0)
-            {
-            }
-        };
 
         /// Internal completion handler to handle the internal streambuf async calls.
         class read_context : public std::enable_shared_from_this<read_context>
@@ -1138,81 +1247,6 @@ namespace streams
                 }
             }
 
-            // delimiter read functions
-            void do_read_to_delim(int_type delim, async_istream<CharType, Impl>* parent,
-                                  async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                while (parent->buffer_->in_avail() > 0)
-                {
-                    int_type ch = parent->buffer_->sbumpc();
-
-                    int_type req_async = traits::requires_async();
-
-                    if (ch == req_async)
-                    {
-                        parent->buffer_->bumpc(BIND_HANDLER(&read_context::post_read_delim, delim, parent, target, helper));
-                        break;
-                    }
-
-                    if (ch == traits::eof() || ch == delim)
-                    {
-                        eof_or_delim_ = true;
-                        target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_delim, delim, parent, target, helper));
-                        break;
-                    }
-
-                    helper->outbuf[helper->write_pos] = static_cast<CharType>(ch);
-                    helper->write_pos += 1;
-
-                    if (helper->is_full())
-                    {
-                        target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_delim, delim, parent, target, helper));
-                        break;
-                    }
-                }
-            }
-
-            void post_read_delim(int_type ch, int_type delim, async_istream<CharType, Impl>* parent,
-                                 async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (ch == traits::eof() || ch == delim)
-                {
-                    eof_or_delim_ = true;
-                    target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_delim, delim, parent, target, helper));
-                }
-                else
-                {
-                    helper->outbuf[helper->write_pos] = static_cast<CharType>(ch);
-                    helper->write_pos += 1;
-
-                    if (helper->is_full())
-                        target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_delim, delim, parent, target, helper));
-                    else
-                        do_read_to_delim(delim, parent, *target, helper);
-                }
-            }
-
-            void post_write_delim(size_t count, int_type delim, async_istream<CharType, Impl>* parent,
-                                  async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (count)
-                {
-                    // flush to target buffer
-                    helper->total += count;
-                    helper->write_pos = 0;
-                    target->sync();
-
-                    if (eof_or_delim_)
-                    {
-                        read_count_ = count;
-                        async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                    }
-                    else
-                    {
-                        do_read_to_delim(delim, parent, target, helper);
-                    }
-                }
-            }
 
             // read line functions
             void do_read_line(async_istream<CharType, Impl>* parent,
