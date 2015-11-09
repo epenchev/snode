@@ -859,7 +859,7 @@ namespace streams
                     else if (buf)
                     {
                         target->putn(buf.get(), count, std::bind(&streambuf_read_handler<CompletionHandler>::on_write,
-                                                                  *this, count, buf));
+                                                                 *this, count, buf));
                     }
                 }
             }
@@ -873,7 +873,8 @@ namespace streams
             CompletionHandler handler_;
         };
 
-        /// read_to_delim() internal implementation, encapsulates all asynchronous logic and streambuf function calls.
+        /// read_to_delim() internal implementation, encapsulates all asynchronous logic and streambuf function calls
+        /// performed in the background.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
         template<typename CompletionHandler>
@@ -893,7 +894,7 @@ namespace streams
                     if (ch == req_async)
                     {
                         istream->streambuf()->bumpc(std::bind(&delim_read_impl<CompletionHandler>::on_read,
-                                *this, std::placeholders::_1, delim, istream, target));
+                                                              *this, std::placeholders::_1, delim, istream, target));
                         break;
                     }
 
@@ -901,7 +902,7 @@ namespace streams
                     {
                         eof_or_delim_ = true;
                         target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
-                                *this, std::placeholders::_1, delim, istream, target));
+                                                                                    *this, std::placeholders::_1, delim, istream, target));
                         break;
                     }
 
@@ -911,7 +912,7 @@ namespace streams
                     if (helper_->is_full())
                     {
                         target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
-                                *this, std::placeholders::_1, delim, istream, target));
+                                                                                    *this, std::placeholders::_1, delim, istream, target));
                         break;
                     }
                 }
@@ -925,7 +926,7 @@ namespace streams
                 {
                     eof_or_delim_ = true;
                     target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
-                            *this, std::placeholders::_1, delim, istream, target));
+                                                                                *this, std::placeholders::_1, delim, istream, target));
                 }
                 else
                 {
@@ -935,7 +936,7 @@ namespace streams
                     if (helper_->is_full())
                     {
                         target->putn(helper_->outbuf, helper_->write_pos, std::bind(&delim_read_impl<CompletionHandler>::on_write,
-                                *this, std::placeholders::_1, delim, istream, target));
+                                                                                    *this, std::placeholders::_1, delim, istream, target));
                     }
                     else
                     {
@@ -968,66 +969,74 @@ namespace streams
             std::shared_ptr<read_helper> helper_;
         };
 
-        /// read_line() internal implementation, encapsulates all asynchronous logic and streambuf function calls.
+        /// read_line() internal implementation, encapsulates all the asynchronous logic and streambuf function calls
+        /// performed in the background.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
         template<typename CompletionHandler>
         struct line_read_impl
         {
-            // read line functions
-            void do_read_line(async_istream<CharType, Impl>* parent,
-                              async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
+            line_read_impl(CompletionHandler handler)
+                : eof_or_crlf_(false), handler_(handler), helper_(std::make_shared<read_helper>())
+            {}
+
+            template<typename BufferImpl>
+            void read_line(async_istream<CharType, Impl>* istream, async_streambuf<CharType, BufferImpl>* target)
             {
                 int_type req_async = traits::requires_async();
 
-                while (parent->buffer_->in_avail() > 0)
+                while (istream->buffer_->in_avail() > 0)
                 {
-                    int_type ch = this->parent_.buffer_->sbumpc();
-
+                    int_type ch = istream->buffer_->sbumpc();
                     if (ch == req_async)
                     {
-                        parent->buffer_->bumpc(BIND_HANDLER(&read_context::post_read_line, parent, target, helper));
+                        istream->buffer_->bumpc(std::bind(&line_read_impl<CompletionHandler>::on_read,
+                                                *this, std::placeholders::_1, istream, target));
                         break;
                     }
 
-                    if (ch == traits::eof())
+                    if (traits::eof() == ch)
                     {
-                        eof_or_delim_ = true;
-                        target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
+                        eof_or_crlf_ = true;
+                        target->putn(helper_->outbuf, helper_->write_pos, std::bind(&line_read_impl<CompletionHandler>::on_write,
+                                                                                    *this, std::placeholders::_1, istream, target));
                         break;
                     }
 
                     if (ch == '\r')
                     {
-                        update_after_cr(parent, target, helper);
+                        update_after_cr(istream, target, helper_);
                     }
                     else
                     {
-                        helper->outbuf[helper->write_pos] = static_cast<CharType>(ch);
-                        helper->write_pos += 1;
+                        helper_->outbuf[helper_->write_pos] = static_cast<CharType>(ch);
+                        helper_->write_pos += 1;
 
-                        if (helper->is_full())
+                        if (helper_->is_full())
                         {
-                            target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
+                            target->putn(helper_->outbuf, helper_->write_pos, std::bind(&line_read_impl<CompletionHandler>::on_write,
+                                                                                        *this, std::placeholders::_1, istream, target));
                             break;
                         }
                     }
                 }
             }
 
-            void post_read_line(int_type ch, async_istream<CharType, Impl>* parent,
-                                async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
+            template<typename BufferImpl>
+            void on_read(int_type ch, async_istream<CharType, Impl>* istream,
+                         async_streambuf<CharType, BufferImpl>* target, std::shared_ptr<read_helper> helper)
             {
                 if (ch == traits::eof())
                 {
-                    eof_or_delim_ = true;
-                    target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
+                    eof_or_crlf_ = true;
+                    target->putn(helper->outbuf, helper->write_pos, std::bind(&line_read_impl<CompletionHandler>::on_write,
+                                                                              *this, std::placeholders::_1, istream, target));
                 }
                 else
                 {
                     if (ch == '\r')
                     {
-                        update_after_cr(parent, target, helper);
+                        update_after_cr(istream, target, helper);
                     }
                     else
                     {
@@ -1035,15 +1044,17 @@ namespace streams
                         helper->write_pos += 1;
 
                         if (helper->is_full())
-                            target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
+                            target->putn(helper->outbuf, helper->write_pos, std::bind(&line_read_impl<CompletionHandler>::on_write,
+                                                                                      *this, std::placeholders::_1, istream, target));
                         else
-                            do_read_line(parent, target, helper);
+                            read_line(istream, target);
                     }
                 }
             }
 
-            void post_write_line(size_t count, async_istream<CharType, Impl>* parent,
-                                 async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
+            template<typename BufferImpl>
+            void on_write(size_t count, async_istream<CharType, Impl>* istream,
+                          async_streambuf<BufferImpl, Impl>* target, std::shared_ptr<read_helper> helper)
             {
                 if (count)
                 {
@@ -1052,37 +1063,82 @@ namespace streams
                     helper->write_pos = 0;
                     target->sync();
 
-                    if (eof_or_delim_)
-                    {
-                        read_count_ = count;
-                        async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                    }
+                    if (eof_or_crlf_)
+                        handler_(count);
                     else
-                    {
-                        do_read_line(parent, target, helper);
-                    }
+                        read_line(istream, target);
                 }
             }
 
-            void update_after_cr(async_istream<CharType, Impl>* parent,
-                                 async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
+            template<typename BufferImpl>
+            void update_after_cr(async_istream<CharType, Impl>* istream,
+                                 async_streambuf<BufferImpl, Impl>* target, std::shared_ptr<read_helper> helper)
             {
-                int_type ch = parent->buffer_->sgetc();
+                int_type ch = istream->streambuf()->sgetc();
                 if (ch == '\n')
-                    parent->buffer_->sbumpc();
+                    istream->streambuf()->sbumpc();
 
-                eof_or_delim_ = true;
-                target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
+                eof_or_crlf_ = true;
+                target->putn(helper->outbuf, helper->write_pos, std::bind(&line_read_impl<CompletionHandler>::on_write,
+                                                                         *this, std::placeholders::_1, istream, target));
             }
+
+            bool eof_or_crlf_;
+            CompletionHandler handler_;
+            std::shared_ptr<read_helper> helper_;
         };
 
-        /// read_to_end() internal implementation, encapsulates all asynchronous logic and streambuf function calls.
+        /// read_to_end() internal implementation, encapsulates all asynchronous logic and streambuf function calls
+        /// performed in the background.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
         template<typename CompletionHandler>
         struct end_read_impl
         {
+            end_read_impl(CompletionHandler handler)
+                : handler_(handler), helper_(std::make_shared<read_helper>())
+            {}
 
+            template<typename BufferImpl>
+            void read_to_end(async_istream<CharType, Impl>* istream, async_streambuf<CharType, BufferImpl>* target)
+            {
+                istream->streambuf()->getn(helper_->outbuf, buf_size_, std::bind(&end_read_impl<CompletionHandler>::on_read,
+                                                                                 *this, std::placeholders::_1, istream, target));
+            }
+
+            template<typename BufferImpl>
+            void on_read(size_t count, async_istream<CharType, Impl>* istream, async_streambuf<CharType, BufferImpl>* target)
+            {
+                if (count)
+                {
+                    target->putn(helper_->outbuf, helper_->write_pos, std::bind(&end_read_impl<CompletionHandler>::on_write,
+                                                                                *this, std::placeholders::_1, istream, target));
+                }
+                else
+                {
+                    // signal EOF to completion handler
+                }
+            }
+
+            template<typename BufferImpl>
+            void on_write(size_t count, async_istream<CharType, Impl>* istream, async_streambuf<CharType, BufferImpl>* target)
+            {
+                if (count)
+                {
+                    // flush to target buffer
+                    helper_->total += count;
+                    target->sync();
+                    istream->streambuf()->getn(helper_->outbuf, buf_size_, std::bind(&end_read_impl<CompletionHandler>::on_read,
+                                                                                     *this, std::placeholders::_1, istream, target));
+                }
+                else
+                {
+                    // signal error to completion handler
+                }
+            }
+
+            CompletionHandler handler_;
+            std::shared_ptr<read_helper> helper_;
         };
 
     public:
@@ -1214,13 +1270,8 @@ namespace streams
             if ( !target.can_write() )
                 throw std::runtime_error("target not set up for receiving data");
 
-            /*
-            std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
-            std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
-            requests_.insert(context);
-            context->do_read_line(this, &target, helper);
-            */
+            line_read_impl<ReadHandler> impl(handler);
+            impl.read_line(this, &target);
         }
 
         /// Read until reaching the end of the stream.
@@ -1229,17 +1280,14 @@ namespace streams
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
         template<typename ReadHandler>
-        void read_to_end(async_streambuf<CharType, Impl> target, ReadHandler handler)
+        void read_to_end(async_streambuf<CharType, Impl>& target, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
             if ( !target.can_write() )
                 throw std::runtime_error("target not set up for receiving data");
 
-            std::shared_ptr<read_helper> helper = std::make_shared<read_helper>();
-            async_streambuf_op<CharType, ReadHandler> handler_op(handler);
-            std::shared_ptr<read_context> context(std::make_shared<read_context>(handler_op));
-            requests_.insert(context);
-            buffer_->getn(helper->outbuf, buf_size_, BIND_OBJ_HANDLER(&read_context::post_read_to_end, context.get(), this, target, helper));
+            end_read_impl<ReadHandler> impl(handler);
+            impl.read_to_end(this, &target);
         }
 
         /// Seeks to the specified write position (pos) an offset relative to the beginning of the stream.
@@ -1293,205 +1341,6 @@ namespace streams
         {
             // may add a future implementation with a type parser, goes undefind for now.
         }
-
-    protected:
-
-        /// Internal completion handler to handle the internal streambuf async calls.
-        class read_context : public std::enable_shared_from_this<read_context>
-        {
-        public:
-            read_context(async_streambuf_op_base<CharType> op, size_t count = 0)
-                : callback_op_(op), read_count_(count), eof_or_delim_(false)
-            {
-            }
-
-            void post_read(size_t count, async_istream<CharType, Impl>* parent,
-                           async_streambuf<CharType, Impl>* target, std::shared_ptr<CharType> buf)
-            {
-                if (count)
-                {
-                    CharType* data;
-                    bool acquired = target->acquire(data, count);
-                    // data is already written to target, just committing.
-                    if (acquired)
-                    {
-                        target->commit(count);
-                        on_read_complete(count, parent);
-                    }
-                    else if (buf)
-                    {
-                        target->putn(buf.get(), count, BIND_HANDLER(&read_context::on_read_complete, parent));
-                    }
-                }
-            }
-
-            void post_write(size_t count, async_istream<CharType, Impl>* parent)
-            {
-                CharType* data;
-                parent->buffer_->acquire(data, count);
-                if (data != nullptr)
-                    parent->buffer_->release(data, count);
-
-                // signal to parent, read operation is complete
-                on_read_complete(count, parent);
-            }
-
-            void on_read_complete(size_t count, async_istream<CharType, Impl>* parent)
-            {
-                if (parent)
-                {
-                    read_count_ = count;
-                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                }
-            }
-
-
-            // read line functions
-            void do_read_line(async_istream<CharType, Impl>* parent,
-                              async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                int_type req_async = traits::requires_async();
-
-                while (parent->buffer_->in_avail() > 0)
-                {
-                    int_type ch = this->parent_.buffer_->sbumpc();
-
-                    if (ch == req_async)
-                    {
-                        parent->buffer_->bumpc(BIND_HANDLER(&read_context::post_read_line, parent, target, helper));
-                        break;
-                    }
-
-                    if (ch == traits::eof())
-                    {
-                        eof_or_delim_ = true;
-                        target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
-                        break;
-                    }
-
-                    if (ch == '\r')
-                    {
-                        update_after_cr(parent, target, helper);
-                    }
-                    else
-                    {
-                        helper->outbuf[helper->write_pos] = static_cast<CharType>(ch);
-                        helper->write_pos += 1;
-
-                        if (helper->is_full())
-                        {
-                            target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
-                            break;
-                        }
-                    }
-                }
-            }
-
-            void post_read_line(int_type ch, async_istream<CharType, Impl>* parent,
-                                async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (ch == traits::eof())
-                {
-                    eof_or_delim_ = true;
-                    target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
-                }
-                else
-                {
-                    if (ch == '\r')
-                    {
-                        update_after_cr(parent, target, helper);
-                    }
-                    else
-                    {
-                        helper->outbuf[helper->write_pos] = static_cast<CharType>(ch);
-                        helper->write_pos += 1;
-
-                        if (helper->is_full())
-                            target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
-                        else
-                            do_read_line(parent, target, helper);
-                    }
-                }
-            }
-
-            void post_write_line(size_t count, async_istream<CharType, Impl>* parent,
-                                 async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (count)
-                {
-                    // flush to target buffer
-                    helper->total += count;
-                    helper->write_pos = 0;
-                    target->sync();
-
-                    if (eof_or_delim_)
-                    {
-                        read_count_ = count;
-                        async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                    }
-                    else
-                    {
-                        do_read_line(parent, target, helper);
-                    }
-                }
-            }
-
-            void update_after_cr(async_istream<CharType, Impl>* parent,
-                                 async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                int_type ch = parent->buffer_->sgetc();
-                if (ch == '\n')
-                    parent->buffer_->sbumpc();
-
-                eof_or_delim_ = true;
-                target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_line, parent, target, helper));
-            }
-
-            // read to end functions
-            void post_read_to_end(size_t count, async_istream<CharType, Impl>* parent,
-                                  async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (count)
-                {
-                    target->putn(helper->outbuf, helper->write_pos, BIND_HANDLER(&read_context::post_write_to_end, parent, target, helper));
-                }
-                else
-                {
-                    read_count_ = helper->total;;
-                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                }
-            }
-
-            void post_write_to_end(size_t count, async_istream<CharType, Impl>* parent,
-                                   async_streambuf<CharType, Impl>* target, std::shared_ptr<read_helper> helper)
-            {
-                if (count)
-                {
-                    // flush to target buffer
-                    helper->total += count;
-                    target->sync();
-                    parent->buffer_->getn(helper->outbuf, buf_size_, BIND_HANDLER(&read_context::post_read_to_end, parent, target, helper));
-                }
-                else
-                {
-                    read_count_ = helper->total;
-                    async_task::connect(&async_istream::post_read_complete, parent, this->shared_from_this());
-                }
-            }
-
-            size_t read_count_;
-            async_streambuf_op_base<CharType> callback_op_;
-            bool eof_or_delim_;
-        };
-
-        friend class read_context;
-        void post_read_complete(std::shared_ptr<read_context> context)
-        {
-            context->callback_op_(context->read_count_);
-            requests_.erase(context);
-        }
-
-        std::set<std::shared_ptr<read_context>> requests_;
     };
 }
 }
