@@ -444,7 +444,7 @@ void http_connection::handle_chunked_body(const boost::system::error_code& ec, i
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
         writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite,
-                       BIND_HANDLER(&http_connection::handle_chunked_body_buff_write));
+                std::bind(&http_connection::handle_chunked_body_buff_write, this, std::placeholders::_1));
     }
 }
 
@@ -475,7 +475,8 @@ void http_connection::handle_body(const boost::system::error_code& ec)
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
         writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()),
-                 std::min(request_buf_.size(), read_size_ - read_), BIND_HANDLER(&http_connection::handle_body_buff_write));
+                std::min(request_buf_.size(), read_size_ - read_),
+                    std::bind(&http_connection::handle_body_buff_write, this, std::placeholders::_1));
     }
     else  // have read request body
     {
@@ -556,7 +557,7 @@ void http_connection::dispatch_request_to_listener()
 
 void http_connection::do_response(bool bad_request)
 {
-    request_.get_response(BIND_HANDLER(&http_connection::handle_response, bad_request));
+    request_.get_response(std::bind(&http_connection::handle_response, this, std::placeholders::_1, bad_request));
 }
 
 void http_connection::handle_response(http_response& response, bool bad_request)
@@ -571,7 +572,7 @@ void http_connection::handle_response(http_response& response, bool bad_request)
         if (request_.get_impl()->get_data_available())
             async_process_response(response);
         else
-            request_.content_ready(BIND_HANDLER(&http_connection::handle_request_data_ready, response));
+            request_.content_ready(std::bind(&http_connection::handle_request_data_ready, this, std::placeholders::_1, response));
     }
 }
 
@@ -644,8 +645,7 @@ void http_connection::handle_write_chunked_response(const http_response& respons
     auto membuf = response_buf_.prepare(ChunkSize + snode::http::chunked_encoding::additional_encoding_space);
 
     readbuf.getn(buffer_cast<uint8_t *>(membuf) + snode::http::chunked_encoding::additional_encoding_space, ChunkSize,
-                    BIND_HANDLER(&http_connection::handle_chunked_response_buff_read,
-                                  buffer_cast<uint8_t*>(membuf), response));
+            std::bind(&http_connection::handle_chunked_response_buff_read, this, std::placeholders::_1, buffer_cast<uint8_t*>(membuf), response));
 }
 
 void http_connection::handle_chunked_response_buff_read(size_t count, uint8_t* membuf, http_response& response)
@@ -682,7 +682,8 @@ void http_connection::handle_write_large_response(const http_response &response,
     size_t readBytes = std::min(ChunkSize, write_size_ - write_);
 
     auto membuf = response_buf_.prepare(readBytes);
-    readbuf.getn(buffer_cast<uint8_t *>(membuf), readBytes, BIND_HANDLER(&http_connection::handle_large_response_buff_read, response));
+    readbuf.getn(buffer_cast<uint8_t *>(membuf), readBytes,
+            std::bind(&http_connection::handle_large_response_buff_read, this, std::placeholders::_1, response));
 }
 
 void http_connection::handle_large_response_buff_read(size_t count, http_response& response)

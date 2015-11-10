@@ -324,7 +324,7 @@ void http_request_impl::reply_impl(http::http_response& response)
      {
          auto op = response_handlers_.front();
          // We have enough data to satisfy this request
-         async_task::connect(&response_ready_op::response_ready, op, boost::ref(response_));
+         async_task::connect(&response_ready_op::response_ready, op, std::ref(response_));
          response_handlers_.pop();
      }
 }

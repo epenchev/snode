@@ -553,7 +553,7 @@ public:
         }
         else
         {
-            async_task::connect(handler, boost::ref(response_));
+            async_task::connect(handler, std::ref(response_));
         }
     }
 

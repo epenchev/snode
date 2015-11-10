@@ -72,7 +72,12 @@ private:
     void handle_response_written(const http_response& response, const boost::system::error_code& ec);
     void finish_request_response();
 
-    void handle_request_data_ready(size_t count, http_response& response) { if (count) async_process_response(response); }
+    void handle_request_data_ready(size_t count, http_response& response)
+    {
+        if (count)
+            async_process_response(response);
+    }
+
     void handle_response(http_response& response, bool bad_request);
     void handle_body_buff_write(size_t count);
     void handle_chunked_body_buff_write(size_t count);
