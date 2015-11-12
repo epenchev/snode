@@ -18,6 +18,7 @@ void snode_core::run()
 {
     if (!threadpool_)
         throw std::runtime_error("Must call init() first");
+
     try
     {
         // main process thread is the only one doing I/O

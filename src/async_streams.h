@@ -342,6 +342,17 @@ namespace streams
                 get_impl()->putn_impl(ptr, count, handler);
         }
 
+        /// Writes a number (count) of characters to the stream from source memory (ptr).
+        /// Note: callers must make sure the data to be written is valid until the returned task completes.
+        /// (handler) is the handler to be called when the write operation completes.
+        /// Copies will be made of the handler as required. The function signature of the handler must be:
+        /// void handler(size_t count) where count is the byte count written or 0 if the write operation failed.
+        template<typename WriteHandler>
+        void putn_nocopy(const CharType* ptr, size_t count, WriteHandler handler)
+        {
+
+        }
+
         /// Reads a single character from the stream and advances the read position.
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:

@@ -68,15 +68,13 @@ public:
     template<typename T>
     void schedule(T task, thread_id_t id)
     {
+        // match the task queue with thread id
         auto it = queues_index_.find(id);
-        if (it == queues_index_.end())
-        {
+
+        if (queues_index_.end() == it)
             throw std::runtime_error(s_threadpool_msg);
-        }
-        else if (id == it->first)
-        {
-            it->second->enqueue(task);
-        }
+
+        it->second->enqueue(task);
     }
 
     /// Get the direct thread interface pool

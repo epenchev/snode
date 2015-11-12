@@ -41,13 +41,9 @@ public:
     void deallocate(void* pointer)
     {
         if (pointer == storage_.address())
-        {
             in_use_ = false;
-        }
         else
-        {
             ::operator delete(pointer);
-        }
     }
 
 private:
@@ -73,8 +69,7 @@ class asio_handler_dispatcher
 public:
     asio_handler_dispatcher(Handler h, Allocator& a, thread_id_t id)
     :  handler_(h), allocator_(a), thread_id_(id)
-    {
-    }
+    {}
 
     template <typename Arg1>
     void operator()(Arg1 arg1)

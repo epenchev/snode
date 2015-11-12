@@ -67,16 +67,18 @@ template <typename ServiceListener>
 class net_service_listener_factory
 {
 public:
-    net_service_listener_factory()
-     : last_used_(-1)
+    net_service_listener_factory() : last_used_(-1)
     {
         auto threads = snode_core::instance().get_threadpool().threads();
         auto thread_count = threads.size();
+
         // map every listener with a worker thread id
         for (int idx = 0; idx < thread_count; idx++)
         {
             ServiceListener impl;
-            listeners_[idx] = std::make_shared<net_service_listener<ServiceListener>>(impl, threads[idx]->get_id());
+            listeners_[idx] = std::make_shared<
+                                  net_service_listener
+                                      <ServiceListener> >(impl, threads[idx]->get_id());
         }
     }
 
@@ -109,14 +111,11 @@ public:
         else
         {
             auto iter = listeners_.find(last_used_);
+
             if ((++iter) != listeners_.end())
-            {
                 last_used_ = iter->first;
-            }
             else
-            {
                 last_used_ = listeners_.begin()->first;
-            }
         }
         return listeners_[last_used_];
     }
