@@ -42,6 +42,7 @@ void snode_config::init(const std::string& filepath)
     }
     catch (std::exception &ex)
     {
+        // TODO use defaults and create new configuration
         err_.set(ex.what());
     }
 }

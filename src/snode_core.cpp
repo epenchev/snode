@@ -9,7 +9,6 @@
 #include <utility>
 
 using namespace boost::asio::ip;
-static const char* s_config_path = "src/conf.xml";
 
 namespace snode
 {
@@ -44,9 +43,13 @@ void snode_core::stop()
     ios.reset();
 }
 
-void snode_core::init()
+void snode_core::init(const std::string& filepath)
 {
-    config_.init(s_config_path);
+    if (!filepath.empty())
+        config_.init(filepath);
+    else
+        throw std::runtime_error("missing XML configuration file");
+
     if (config_.error())
         return;
 

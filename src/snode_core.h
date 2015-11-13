@@ -43,7 +43,7 @@ public:
     /// Factory for registering all the server handler classes.
     typedef reg_factory<net_service_base> service_factory;
 
-    void init();
+    void init(const std::string& filepath);
 
     /// Main entry point of the system, read configuration and runs the system.
     void run();

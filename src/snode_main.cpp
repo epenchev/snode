@@ -9,7 +9,7 @@
 int main(int argc, char* argv[])
 {
     snode::snode_core& server = snode::snode_core::instance();
-    server.init();
+    server.init(argv[1]);
     if (!server.get_config().error())
         server.run();
     else
