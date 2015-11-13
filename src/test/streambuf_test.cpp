@@ -187,15 +187,23 @@ BOOST_AUTO_TEST_CASE( async_istream_test )
 }
 #endif
 
-
+snode::streams::producer_consumer_buffer<uint8_t>* p_buf;
 static const char* s_config_path = "../conf.xml";
 typedef snode::streams::producer_consumer_buffer<uint8_t>::traits buff_traits;
 
 void test_func(snode::streams::producer_consumer_buffer<uint8_t>& buf, snode::snode_core& server)
 {
+	p_buf = &buf;
+
     std::function<void (size_t)> handler_putn = [](size_t count) {
+    	std::function<void (size_t)> handler_getn = [](size_t count) {
+    																	BOOST_TEST_MESSAGE( "getn() completion handler" );
+    																	//BOOST_CHECK_EQUAL( sample_membuf, sample_string.c_str() );
+    																 };
+
                                                                      BOOST_TEST_MESSAGE( "putn() completion handler" );
                                                                      BOOST_CHECK_EQUAL( count, sample_string.size() );
+                                                                     p_buf->getn(sample_membuf, /*sizeof(sample_membuf)*/0, handler_getn);
                                                                  };
     buf.putn((const unsigned char*)(sample_string.c_str()), sample_string.size(), handler_putn);
 }
