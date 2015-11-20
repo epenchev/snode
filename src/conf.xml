@@ -1,6 +1,6 @@
 <logfile>skit.log</logfile> <!-- global parameters mandatory-->
 <daemon>1</daemon>
-<threads>1</threads>
+<threads>2</threads>
 
 <!-- JSON managment API authentication -->
 <admin>

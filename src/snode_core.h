@@ -26,11 +26,12 @@ namespace snode
 class snode_core
 {
 private:
-    boost::asio::io_service                 ios;                 /// boost io_service object to perform all socket based I/O.
-    snode::threadpool*                      threadpool_;         /// handling all I/O and event messaging tasks.
-    std::list<tcp_acceptor_ptr>             acceptors_;          /// socket acceptors listening for incoming connections.
-    snode_config                            config_;             /// global configuration.
+    boost::asio::io_service                      ios;                 /// boost io_service object to perform all socket based I/O.
+    snode::threadpool*                           threadpool_;         /// handling all I/O and event messaging tasks.
+    std::list<tcp_acceptor_ptr>                  acceptors_;          /// socket acceptors listening for incoming connections.
+    snode_config                                 config_;             /// global configuration.
     std::map<unsigned short, net_service_base*>  services_;           /// network port -> net_service object map association.
+    thread_id_t                                  main_thread_;        /// main thread of execution (dedicated to the I/O service loop)
 
 public:
     /// server_controller is a singleton, can be accessed only with this method.

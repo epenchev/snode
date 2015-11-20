@@ -17,13 +17,13 @@ void snode_core::run()
 {
     if (!threadpool_)
         throw std::runtime_error("Must call init() first");
-
     try
     {
         // main process thread is the only one doing I/O
-        ios.run();
+        if (THIS_THREAD_ID() == main_thread_)
+            ios.run();
     }
-    catch (std::exception& ex)
+    catch (std::exception& err)
     {
         // report the error
     }
@@ -31,6 +31,13 @@ void snode_core::run()
 
 void snode_core::stop()
 {
+
+    if (THIS_THREAD_ID() != main_thread_)
+    {
+        ios.post(boost::bind(&snode_core::stop, this));
+        return;
+    }
+
     threadpool_->stop();
     for (auto acceptor_it : acceptors_)
     {
@@ -110,7 +117,8 @@ void snode_core::handle_accept(tcp_socket_ptr sock, tcp_acceptor_ptr acceptor, c
     }
 }
 
-snode_core::snode_core() : threadpool_(nullptr)
+snode_core::snode_core()
+: threadpool_(nullptr), main_thread_(THIS_THREAD_ID())
 {}
 
 snode_core::~snode_core()

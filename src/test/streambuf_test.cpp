@@ -191,30 +191,30 @@ snode::streams::producer_consumer_buffer<uint8_t>* p_buf;
 static const char* s_config_path = "../conf.xml";
 typedef snode::streams::producer_consumer_buffer<uint8_t>::traits buff_traits;
 
+void handler_getn (size_t count/*, snode::snode_core& server*/)
+{
+    BOOST_TEST_MESSAGE( "getn() completion handler" );
+    //BOOST_CHECK_EQUAL( sample_membuf, sample_string.c_str() );
+    //server.stop();
+}
+
+void handler_putn (size_t count/*, snode::snode_core& server*/)
+{
+        BOOST_TEST_MESSAGE( "putn() completion handler" );
+        BOOST_CHECK_EQUAL( count, sample_string.size() );
+        p_buf->getn(sample_membuf, /*sizeof(sample_membuf)*/0, handler_getn/*boost::bind(&handler_getn, std::placeholders::_1, server)*/);
+}
+
 void test_func(snode::streams::producer_consumer_buffer<uint8_t>& buf, snode::snode_core& server)
 {
 	p_buf = &buf;
-
-    std::function<void (size_t)> handler_putn = [](size_t count) {
-    	std::function<void (size_t)> handler_getn = [](size_t count) {
-    																	BOOST_TEST_MESSAGE( "getn() completion handler" );
-    																	//BOOST_CHECK_EQUAL( sample_membuf, sample_string.c_str() );
-    																 };
-
-                                                                     BOOST_TEST_MESSAGE( "putn() completion handler" );
-                                                                     BOOST_CHECK_EQUAL( count, sample_string.size() );
-                                                                     p_buf->getn(sample_membuf, /*sizeof(sample_membuf)*/0, handler_getn);
-                                                                 };
-    buf.putn((const unsigned char*)(sample_string.c_str()), sample_string.size(), handler_putn);
+    buf.putn((const unsigned char*)(sample_string.c_str()), sample_string.size(), handler_putn /*boost::bind(&handler_putn, std::placeholders::_1, server)*/);
 }
-
 
 int free_test_function()
 {
     // test buffer
     snode::streams::producer_consumer_buffer<uint8_t> buf(512);
-
-    boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
     BOOST_TEST_MESSAGE( "Starting test" );
 
     snode::snode_core& server = snode::snode_core::instance();
@@ -230,6 +230,7 @@ int free_test_function()
 
         // block main thread
         server.run();
+        BOOST_TEST_MESSAGE("Server stopped");
     }
     else
     {
@@ -239,12 +240,12 @@ int free_test_function()
     return 0;
 }
 
+// unit test entry point
 test_suite*
 init_unit_test_suite( int argc, char* argv[] )
 {
-    framework::master_test_suite().
-        add( BOOST_TEST_CASE( &free_test_function ) );
-
+    boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
+    framework::master_test_suite().add( BOOST_TEST_CASE( &free_test_function ) );
     return 0;
 }
 
