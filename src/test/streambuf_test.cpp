@@ -211,6 +211,11 @@ void test_func(snode::streams::producer_consumer_buffer<uint8_t>& buf, snode::sn
     buf.putn((const unsigned char*)(sample_string.c_str()), sample_string.size(), handler_putn /*boost::bind(&handler_putn, std::placeholders::_1, server)*/);
 }
 
+void handler_read_istream(size_t count)
+{
+    // todo
+}
+
 int free_test_function()
 {
     // test buffer
@@ -220,6 +225,15 @@ int free_test_function()
     snode::snode_core& server = snode::snode_core::instance();
     server.init(s_config_path);
 
+    snode::streams::producer_consumer_buffer<uint8_t>::istream_type istr = buf.create_istream();
+    snode::streams::producer_consumer_buffer<uint8_t> target(512);
+    istr.read(target, 100, handler_read_istream);
+
+    istr.read_to_delim(target, '\n', handler_read_istream);
+    istr.read_line(target, handler_read_istream);
+    //istr.read_to_end(target, handler_read_istream);
+
+/*
     if (!server.get_config().error())
     {
         auto threads = snode::snode_core::instance().get_threadpool().threads();
@@ -236,7 +250,7 @@ int free_test_function()
     {
         std::cout << server.get_config().error().message() << std::endl;
     }
-
+*/
     return 0;
 }
 
