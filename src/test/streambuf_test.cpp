@@ -231,7 +231,7 @@ int free_test_function()
 
     istr.read_to_delim(target, '\n', handler_read_istream);
     istr.read_line(target, handler_read_istream);
-    //istr.read_to_end(target, handler_read_istream);
+    istr.read_to_end(target, handler_read_istream);
 
 /*
     if (!server.get_config().error())
