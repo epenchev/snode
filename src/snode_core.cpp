@@ -53,9 +53,13 @@ void snode_core::stop()
 void snode_core::init(const std::string& filepath)
 {
     if (!filepath.empty())
+    {
         config_.init(filepath);
+    }
     else
+    {
         throw std::runtime_error("missing XML configuration file");
+    }
 
     if (config_.error())
         return;
