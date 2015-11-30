@@ -21,50 +21,48 @@ using namespace boost::unit_test;
  *
  */
 
-// Globals
-static const char* s_config_path = "../conf.xml";
 typedef snode::streams::producer_consumer_buffer<uint8_t> prod_cons_buf_type;
 typedef prod_cons_buf_type::traits buff_traits;
-const size_t bufsize = 512;
-const prod_cons_buf_type::char_type sample_buf[bufsize] = {"HI producer_consumer buffer, just testing here."};
-prod_cons_buf_type::char_type io_buf[bufsize] = {0};
-prod_cons_buf_type buf(bufsize);
-prod_cons_buf_type target(bufsize);
-
-void handler_getn(size_t count);
-void handler_putn(size_t count);
-
-void handler_putn(size_t count)
-{
-    BOOST_TEST_MESSAGE( "putn() completion handler" );
-    BOOST_CHECK_EQUAL( count, bufsize );
-    buf.getn(io_buf, bufsize, handler_getn);
-}
-
-void handler_getn(size_t count)
-{
-    BOOST_TEST_MESSAGE( "getn() completion handler" );
-    BOOST_CHECK_EQUAL( count, bufsize );
-    snode::snode_core::instance().stop();
-}
+typedef std::shared_ptr<prod_cons_buf_type> prod_cons_buf_ptr;
+typedef std::shared_ptr<uint8_t> buf_ptr;
 
 void test_streambuf_putn_getn()
 {
+    const size_t bufsize = 512;
+    const std::string sample_data("HI producer_consumer buffer, just testing here.");
+    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(bufsize);
+
     BOOST_TEST_MESSAGE( "test_streambuf_putn_getn start" );
-    buf.putn(sample_buf, bufsize, handler_putn);
+
+    std::function<void(size_t, prod_cons_buf_ptr, buf_ptr)> handler_putn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
+    {
+        buf_ptr io_buf = std::make_shared<uint8_t>(bufsize);
+        BOOST_CHECK_EQUAL( count, bufsize );
+
+        std::function<void(size_t, prod_cons_buf_ptr, buf_ptr)> handler_getn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
+        {
+            BOOST_TEST_MESSAGE( "getn() completion handler" );
+            BOOST_CHECK_EQUAL( count, bufsize );
+            std::string io_str((const char*)target.get());
+            BOOST_CHECK_EQUAL( io_str.compare("HI producer_consumer buffer, just testing here."), 0 );
+            snode::snode_core::instance().stop();
+        };
+        buf->getn(io_buf.get(), bufsize, std::bind(handler_getn, std::placeholders::_1, buf));
+    };
+    buf->putn((const prod_cons_buf_type::char_type*)sample_data.c_str(), sample_data.size(), std::bind(handler_putn, std::placeholders::_1, buf));
 }
 
 int async_streambuf_test_function()
 {
+    const char* config_path = "../conf.xml";
     BOOST_TEST_MESSAGE( "Starting test" );
 
     snode::snode_core& server = snode::snode_core::instance();
-    server.init(s_config_path);
+    server.init(config_path);
 
     if (!server.get_config().error())
     {
         auto threads = snode::snode_core::instance().get_threadpool().threads();
-        auto thread_count = threads.size();
         snode::async_task::connect(test_streambuf_putn_getn, threads[0]->get_id());
         server.run();
     }
