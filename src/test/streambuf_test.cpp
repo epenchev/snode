@@ -31,30 +31,34 @@ void test_streambuf_putn_getn()
     const size_t bufsize = 512;
     const std::string sample_data("HI producer_consumer buffer, just testing here.");
     prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(bufsize);
+    buf_ptr io_buf = std::make_shared<uint8_t>(bufsize);
 
     BOOST_TEST_MESSAGE( "test_streambuf_putn_getn start" );
 
     std::function<void(size_t, prod_cons_buf_ptr, buf_ptr)> handler_putn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
     {
-        buf_ptr io_buf = std::make_shared<uint8_t>(bufsize);
-        BOOST_CHECK_EQUAL( count, bufsize );
+        buf_ptr io_buf1 = std::make_shared<uint8_t>(512);
+        BOOST_REQUIRE_NE( count, 0 );
+        BOOST_TEST_MESSAGE( "write count " << count );
 
         std::function<void(size_t, prod_cons_buf_ptr, buf_ptr)> handler_getn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
         {
-            BOOST_TEST_MESSAGE( "getn() completion handler" );
-            BOOST_CHECK_EQUAL( count, bufsize );
+            BOOST_TEST_MESSAGE( "read count " << count );
+            BOOST_REQUIRE_NE( count, 0 );
             std::string io_str((const char*)target.get());
             BOOST_CHECK_EQUAL( io_str.compare("HI producer_consumer buffer, just testing here."), 0 );
+            BOOST_TEST_MESSAGE( "test_streambuf_putn_getn complete" );
             snode::snode_core::instance().stop();
         };
-        buf->getn(io_buf.get(), bufsize, std::bind(handler_getn, std::placeholders::_1, buf));
+        buf->getn(target.get(), count, std::bind(handler_getn, std::placeholders::_1, buf, io_buf1));
+        BOOST_TEST_MESSAGE( "write count again " << count );
     };
-    buf->putn((const prod_cons_buf_type::char_type*)sample_data.c_str(), sample_data.size(), std::bind(handler_putn, std::placeholders::_1, buf));
+    buf->putn((const prod_cons_buf_type::char_type*)sample_data.c_str(), sample_data.size(), std::bind(handler_putn, std::placeholders::_1, buf, io_buf));
 }
 
 int async_streambuf_test_function()
 {
-    const char* config_path = "../conf.xml";
+    const char* config_path = "/home/emo/workspace/snode/src/conf.xml";
     BOOST_TEST_MESSAGE( "Starting test" );
 
     snode::snode_core& server = snode::snode_core::instance();
