@@ -9,13 +9,13 @@
 #include <map>
 #include <vector>
 #include <functional>
-
 #include <boost/asio.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "synchronised_queue.h"
 #include "thread_wrapper.h"
 #include "snode_types.h"
+#include "async_op.h"
 
 namespace snode
 {
@@ -65,8 +65,8 @@ public:
 
     /// Post a task to a given thread. Task can be anything as long it has () operator defined.
     /// Throws runtime_error on error.
-    template<typename T>
-    void schedule(T task, thread_id_t id)
+    //template<typename T>
+    void schedule(async_op_base op, thread_id_t id)
     {
         // match the task queue with thread id
         auto it = queues_index_.find(id);
@@ -74,7 +74,7 @@ public:
         if (queues_index_.end() == it)
             throw std::runtime_error(s_threadpool_msg);
 
-        it->second->enqueue(task);
+        it->second->enqueue(op);
     }
 
     /// Get the direct thread interface pool
@@ -85,7 +85,8 @@ public:
 
 private:
 
-    typedef synchronised_queue< std::function<void()> > task_queue_t;
+    //typedef synchronised_queue< std::function<void()> > task_queue_t;
+    typedef synchronised_queue<async_op_base> task_queue_t;
     typedef std::shared_ptr<task_queue_t> task_queue_ptr;
 
     /// Thread entry function.
@@ -98,7 +99,8 @@ private:
             try
             {
                 auto task = queue->dequeue();
-                task();
+                task.run();
+                //task();
             }
             catch (const cancel_thread_err&)
             {
@@ -117,7 +119,7 @@ private:
     /// Stop thread, internal method.
     void stop_thread(thread_id_t id)
     {
-        schedule([]() -> void { throw cancel_thread_err(); }, id);
+        //schedule([]() -> void { throw cancel_thread_err(); }, id);
     }
 
     std::size_t size_;

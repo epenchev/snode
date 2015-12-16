@@ -350,7 +350,29 @@ namespace streams
         template<typename WriteHandler>
         void putn_nocopy(const CharType* ptr, size_t count, WriteHandler handler)
         {
+            if (count)
+            {
+                if (!can_write())
+                    throw std::runtime_error(utils::s_in_streambuf_msg);
+                else
+                    get_impl()->putn_nocopy(ptr, count);
+            }
+        }
 
+        /// Writes a number (count) of characters to the stream from source memory (ptr).
+        /// This is a synchronous operation, but is guaranteed to never block.
+        /// Returns byte count written or 0 if the write operation failed.
+        size_t sputn_nocopy(const CharType* ptr, size_t count)
+        {
+            if (count)
+            {
+                if (!can_write())
+                    throw std::runtime_error(utils::s_in_streambuf_msg);
+                else
+                    return get_impl()->sputn_nocopy(ptr, count);
+            }
+
+            return 0;
         }
 
         /// Reads a single character from the stream and advances the read position.

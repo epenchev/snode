@@ -35,12 +35,12 @@ public:
     /// Get/remove element from queue, blocks if there are no elements into the queue.
     T dequeue()
     {
-        T result;
+        //T result;
         boost::unique_lock<boost::mutex> lock_guard(mutex_lock_);
         while (!queue_impl_.size())
             condvar_.wait(lock_guard);
 
-        result = queue_impl_.front();
+        T result = queue_impl_.front();
         queue_impl_.pop();
         return result;
     }

@@ -173,6 +173,18 @@ namespace streams
         template<typename WriteHandler>
         void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
         {
+            auto write_fn = [](const CharType* ptr, size_t count, WriteHandler handler, producer_consumer_buffer<CharType>* buf)
+            {
+                size_t res = buf->write(ptr, count);
+                //async_task::connect(handler, res);
+            };
+            //async_task::connect(write_fn, ptr, count, handler, this);
+        }
+
+        /// internal implementation of putn() from async_streambuf
+        template<typename WriteHandler>
+        void putn_nocopy_impl(const CharType* ptr, size_t count, WriteHandler handler)
+        {
             size_t res = this->write(ptr, count);
             async_task::connect(handler, res);
         }

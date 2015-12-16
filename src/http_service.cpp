@@ -443,8 +443,8 @@ void http_connection::handle_chunked_body(const boost::system::error_code& ec, i
     {
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
-        writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite,
-                std::bind(&http_connection::handle_chunked_body_buff_write, this, std::placeholders::_1));
+        //writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()), toWrite,
+        //        std::bind(&http_connection::handle_chunked_body_buff_write, this, std::placeholders::_1));
     }
 }
 
@@ -474,9 +474,10 @@ void http_connection::handle_body(const boost::system::error_code& ec)
     {
         auto writebuf = request_.get_impl()->outstream().streambuf();
         /* TODO use putn_nocopy */
+        /*
         writebuf.putn(buffer_cast<const uint8_t*>(request_buf_.data()),
                 std::min(request_buf_.size(), read_size_ - read_),
-                    std::bind(&http_connection::handle_body_buff_write, this, std::placeholders::_1));
+                    std::bind(&http_connection::handle_body_buff_write, this, std::placeholders::_1)); */
     }
     else  // have read request body
     {
