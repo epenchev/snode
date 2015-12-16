@@ -336,10 +336,10 @@ namespace streams
             if (!can_write())
                 throw std::runtime_error(utils::s_in_streambuf_msg);
 
-            if (count == 0)
+            //if (count == 0)
                 async_task::connect(handler, 0);
-            else
-                get_impl()->putn_impl(ptr, count, handler);
+            //else
+            //    get_impl()->putn_impl(ptr, count, handler);
         }
 
         /// Writes a number (count) of characters to the stream from source memory (ptr).

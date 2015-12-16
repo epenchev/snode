@@ -1,12 +1,9 @@
-/*
- * async_op.h
- *
- *  Created on: Dec 16, 2015
- *      Author: emo
- */
+//
+// async_op.h
+// Copyright (C) 2015  Emil Penchev, Bulgaria
 
-#ifndef SRC_ASYNC_OP_H_
-#define SRC_ASYNC_OP_H_
+#ifndef ASYNC_OP_H_
+#define ASYNC_OP_H_
 
 class async_op_base
 {
@@ -45,4 +42,4 @@ private:
     Handler handler_;
 };
 
-#endif /* SRC_ASYNC_OP_H_ */
+#endif /* ASYNC_OP_H_ */

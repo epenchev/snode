@@ -65,8 +65,8 @@ public:
 
     /// Post a task to a given thread. Task can be anything as long it has () operator defined.
     /// Throws runtime_error on error.
-    //template<typename T>
-    void schedule(async_op_base op, thread_id_t id)
+    template<typename T>
+    void schedule(T task, thread_id_t id)
     {
         // match the task queue with thread id
         auto it = queues_index_.find(id);
@@ -74,6 +74,7 @@ public:
         if (queues_index_.end() == it)
             throw std::runtime_error(s_threadpool_msg);
 
+        async_op<T> op(task);
         it->second->enqueue(op);
     }
 
@@ -85,7 +86,6 @@ public:
 
 private:
 
-    //typedef synchronised_queue< std::function<void()> > task_queue_t;
     typedef synchronised_queue<async_op_base> task_queue_t;
     typedef std::shared_ptr<task_queue_t> task_queue_ptr;
 
@@ -99,8 +99,9 @@ private:
             try
             {
                 auto task = queue->dequeue();
+                std::cout << "task.run(); \n";
                 task.run();
-                //task();
+                std::cout << "task.run(); end \n";
             }
             catch (const cancel_thread_err&)
             {
@@ -119,7 +120,7 @@ private:
     /// Stop thread, internal method.
     void stop_thread(thread_id_t id)
     {
-        //schedule([]() -> void { throw cancel_thread_err(); }, id);
+    	schedule([]() -> void { throw cancel_thread_err(); }, id);
     }
 
     std::size_t size_;

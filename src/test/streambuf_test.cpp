@@ -39,7 +39,7 @@ void handler_getn (size_t count, prod_cons_buf_type* buf, uint8_t* target)
 void handler_putn (size_t count, prod_cons_buf_type* buf, uint8_t* target)
 {
     //buf_ptr io_buf1 = std::make_shared<uint8_t>(512);
-    uint8_t* io_buf1 = new uint8_t(512);
+    uint8_t* io_buf1 = new uint8_t[512];
     BOOST_REQUIRE_NE( count, 0 );
     BOOST_TEST_MESSAGE( "write count " << count );
 

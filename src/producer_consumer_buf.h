@@ -13,6 +13,7 @@
 #include <assert.h>
 #include "async_streams.h"
 #include "async_task.h"
+#include "async_op.h"
 
 namespace snode
 {
@@ -173,12 +174,15 @@ namespace streams
         template<typename WriteHandler>
         void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
         {
-            auto write_fn = [](const CharType* ptr, size_t count, WriteHandler handler, producer_consumer_buffer<CharType>* buf)
+        	typedef async_streambuf_op<CharType, WriteHandler> op_type;
+        	op_type* op = new async_streambuf_op<CharType, WriteHandler>(handler);
+            auto write_fn = [](const CharType* ptr, size_t count,
+            		           async_streambuf_op_base<CharType>* op, producer_consumer_buffer<CharType>* buf)
             {
                 size_t res = buf->write(ptr, count);
-                //async_task::connect(handler, res);
+                op->complete_size(res);
             };
-            //async_task::connect(write_fn, ptr, count, handler, this);
+            async_task::connect(write_fn, ptr, count, op, this);
         }
 
         /// internal implementation of putn() from async_streambuf
