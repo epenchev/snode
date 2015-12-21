@@ -336,10 +336,10 @@ namespace streams
             if (!can_write())
                 throw std::runtime_error(utils::s_in_streambuf_msg);
 
-            //if (count == 0)
+            if (count == 0)
                 async_task::connect(handler, 0);
-            //else
-            //    get_impl()->putn_impl(ptr, count, handler);
+            else
+                get_impl()->putn_impl(ptr, count, handler);
         }
 
         /// Writes a number (count) of characters to the stream from source memory (ptr).
@@ -463,8 +463,8 @@ namespace streams
                 get_impl()->getn_impl(ptr, count, handler);
         }
 
-        /// Copies up to a given number (count) of characters from the stream synchronously, from source memory (ptr).
-        /// Returns the number of characters copied. O if the end of the stream is reached or an asynchronous read is required.
+        /// Copies up to a given number (count) of characters from the stream to memory (ptr) synchronously.
+        /// Returns the number of characters copied. 0 if the end of the stream is reached or an asynchronous read is required.
         /// This is a synchronous operation, but is guaranteed to never block.
         size_t scopy(CharType* ptr, size_t count)
         {

@@ -74,7 +74,7 @@ public:
         if (queues_index_.end() == it)
             throw std::runtime_error(s_threadpool_msg);
 
-        async_op<T> op(task);
+        async_op<T>* op = new async_op<T>(task);
         it->second->enqueue(op);
     }
 
@@ -86,7 +86,7 @@ public:
 
 private:
 
-    typedef synchronised_queue<async_op_base> task_queue_t;
+    typedef synchronised_queue<async_op_base*> task_queue_t;
     typedef std::shared_ptr<task_queue_t> task_queue_ptr;
 
     /// Thread entry function.
@@ -99,9 +99,8 @@ private:
             try
             {
                 auto task = queue->dequeue();
-                std::cout << "task.run(); \n";
-                task.run();
-                std::cout << "task.run(); end \n";
+                task->run();
+                delete task;
             }
             catch (const cancel_thread_err&)
             {

@@ -21,14 +21,12 @@ public:
     template<typename F>
     static void inline connect(F func, thread_id_t id = THIS_THREAD_ID())
     {
-    	std::cout << "connect(F func, thread_id_t id = THIS_THREAD_ID()) \n";
         snode_core::instance().get_threadpool().schedule(func, id);
     }
 
     template <typename F, typename A1>
     static void inline connect(F func, A1 a1, thread_id_t id = THIS_THREAD_ID())
     {
-    	std::cout << "connect(F func, A1 a1, thread_id_t id = THIS_THREAD_ID()) \n";
         snode_core::instance().get_threadpool().schedule(std::bind(func, a1), id);
     }
 

@@ -34,6 +34,7 @@ namespace lib {
 
 #ifdef _SNODE_CPP11_THREAD_
     using std::mutex;
+    std::recursive_mutex;
     using std::lock_guard;
     using std::thread;
     using std::this_thread;
@@ -42,6 +43,7 @@ namespace lib {
     #define THIS_THREAD_ID() std::this_thread::get_id()
 #else
     using boost::mutex;
+    using boost::recursive_mutex;
     using boost::lock_guard;
     using boost::thread;
     using boost::unique_lock;

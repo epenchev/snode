@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <functional>
+#include <algorithm>
 
 #include "snode_core.h"
 #include "async_task.h"
@@ -21,76 +22,64 @@ using namespace boost::unit_test;
  *
  */
 
-typedef snode::streams::producer_consumer_buffer<uint8_t> prod_cons_buf_type;
-typedef prod_cons_buf_type::traits buff_traits;
+typedef uint8_t char_type;
+typedef snode::streams::producer_consumer_buffer<char_type> prod_cons_buf_type;
 typedef std::shared_ptr<prod_cons_buf_type> prod_cons_buf_ptr;
 typedef std::shared_ptr<uint8_t> buf_ptr;
 
-void handler_getn (size_t count, prod_cons_buf_type* buf, uint8_t* target)
+void test_streambuf_putn()
 {
-    BOOST_TEST_MESSAGE( "read count " << count );
-    BOOST_REQUIRE_NE( count, 0 );
-    std::string io_str((const char*)target);
-    BOOST_CHECK_EQUAL( io_str.compare("HI producer_consumer buffer, just testing here."), 0 );
-    BOOST_TEST_MESSAGE( "test_streambuf_putn_getn complete" );
-    //snode::snode_core::instance().stop();
-};
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    prod_cons_buf_ptr wbuf = std::make_shared<prod_cons_buf_type>(512);
 
-void handler_putn (size_t count, prod_cons_buf_type* buf, uint8_t* target)
-{
-    //buf_ptr io_buf1 = std::make_shared<uint8_t>(512);
-    uint8_t* io_buf1 = new uint8_t[512];
-    BOOST_REQUIRE_NE( count, 0 );
-    BOOST_TEST_MESSAGE( "write count " << count );
+    BOOST_TEST_MESSAGE( "test_streambuf_putn start" );
 
-    /*
-    auto handler_getn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
+    auto handler_putn = [](size_t count, prod_cons_buf_ptr buf)
     {
-        BOOST_TEST_MESSAGE( "read count " << count );
+        const uint8_t data_template[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+        uint8_t target[sizeof(data_template) + 1] = {0};
         BOOST_REQUIRE_NE( count, 0 );
-        std::string io_str((const char*)target.get());
-        BOOST_CHECK_EQUAL( io_str.compare("HI producer_consumer buffer, just testing here."), 0 );
-        BOOST_TEST_MESSAGE( "test_streambuf_putn_getn complete" );
-        //snode::snode_core::instance().stop();
-    };
-    */
-    buf->getn(target, count, std::bind(handler_getn, std::placeholders::_1, buf, io_buf1));
-    BOOST_TEST_MESSAGE( "write count again " << count );
-};
+        size_t rdbytes = buf->scopy(target, sizeof(target) - 1);
+        BOOST_REQUIRE_NE( rdbytes, 0 );
+        BOOST_CHECK_EQUAL(target, data_template);
+        BOOST_TEST_MESSAGE( "test_streambuf_putn end" );
 
-void test_streambuf_putn_getn()
+        snode::snode_core& server = snode::snode_core::instance();
+        server.stop();
+    };
+    wbuf->putn(data, sizeof(data), std::bind(handler_putn, std::placeholders::_1, wbuf));
+}
+
+void test_streambuf_getn()
 {
-    const size_t bufsize = 512;
-    const std::string sample_data("HI producer_consumer buffer, just testing here.");
-    //prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(bufsize);
-    //buf_ptr io_buf = std::make_shared<uint8_t>(bufsize);
-    prod_cons_buf_type* buf = new prod_cons_buf_type(bufsize);
-    uint8_t* io_buf = new uint8_t[512];
-    BOOST_TEST_MESSAGE( "test_streambuf_putn_getn start" );
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    auto size = sizeof(data);
 
-#if 0
-    auto handler_putn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
+    BOOST_TEST_MESSAGE( "test_streambuf_getn start" );
+
+    prod_cons_buf_ptr rbuf = std::make_shared<prod_cons_buf_type>(512);
+    buf_ptr ptarget = std::make_shared<uint8_t>(size + 1);
+    std::fill(ptarget.get(), ptarget.get() + (size + 1), 0);
+
+    auto target = rbuf->alloc(size);
+    BOOST_ASSERT( target == nullptr );
+
+    std::copy(data, data + size, target);
+    rbuf->commit(size);
+
+    auto handler_getn = [](size_t count, buf_ptr target, prod_cons_buf_ptr buf)
     {
-        buf_ptr io_buf1 = std::make_shared<uint8_t>(512);
+        const uint8_t data_template[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
         BOOST_REQUIRE_NE( count, 0 );
-        BOOST_TEST_MESSAGE( "write count " << count );
 
-        /*
-        auto handler_getn = [](size_t count, prod_cons_buf_ptr buf, buf_ptr target)
-        {
-            BOOST_TEST_MESSAGE( "read count " << count );
-            BOOST_REQUIRE_NE( count, 0 );
-            std::string io_str((const char*)target.get());
-            BOOST_CHECK_EQUAL( io_str.compare("HI producer_consumer buffer, just testing here."), 0 );
-            BOOST_TEST_MESSAGE( "test_streambuf_putn_getn complete" );
-            //snode::snode_core::instance().stop();
-        };
-        */
-        buf->getn(target.get(), count, std::bind(handler_getn, std::placeholders::_1, buf, io_buf1));
-        BOOST_TEST_MESSAGE( "write count again " << count );
+        BOOST_CHECK_EQUAL( target.get(), data_template );
+
+        BOOST_TEST_MESSAGE( "test_streambuf_getn end" );
+        snode::snode_core& server = snode::snode_core::instance();
+        server.stop();
     };
-#endif
-    buf->putn((const prod_cons_buf_type::char_type*)sample_data.c_str(), sample_data.size(), std::bind(handler_putn, std::placeholders::_1, buf, io_buf));
+    rbuf->getn(ptarget.get(), size, std::bind(handler_getn, std::placeholders::_1, ptarget, rbuf));
+
 }
 
 int async_streambuf_test_function()
@@ -104,7 +93,10 @@ int async_streambuf_test_function()
     if (!server.get_config().error())
     {
         auto threads = snode::snode_core::instance().get_threadpool().threads();
-        snode::async_task::connect(test_streambuf_putn_getn, threads[0]->get_id());
+        auto th = threads.begin()->get();
+        snode::async_task::connect(test_streambuf_putn, th->get_id());
+        server.run();
+        snode::async_task::connect(test_streambuf_getn, th->get_id());
         server.run();
     }
     else

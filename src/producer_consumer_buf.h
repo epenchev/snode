@@ -14,6 +14,7 @@
 #include "async_streams.h"
 #include "async_task.h"
 #include "async_op.h"
+#include "thread_wrapper.h"
 
 namespace snode
 {
@@ -174,23 +175,23 @@ namespace streams
         template<typename WriteHandler>
         void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
         {
-        	typedef async_streambuf_op<CharType, WriteHandler> op_type;
-        	op_type* op = new async_streambuf_op<CharType, WriteHandler>(handler);
+            size_t res = this->write(ptr, count);
+            async_task::connect(handler, res);
+        }
+
+        /// internal implementation of putn_nocopy() from async_streambuf
+        template<typename WriteHandler>
+        void putn_nocopy_impl(const CharType* ptr, size_t count, WriteHandler handler)
+        {
+            typedef async_streambuf_op<CharType, WriteHandler> op_type;
+            op_type* op = new async_streambuf_op<CharType, WriteHandler>(handler);
             auto write_fn = [](const CharType* ptr, size_t count,
-            		           async_streambuf_op_base<CharType>* op, producer_consumer_buffer<CharType>* buf)
+                               async_streambuf_op_base<CharType>* op, producer_consumer_buffer<CharType>* buf)
             {
                 size_t res = buf->write(ptr, count);
                 op->complete_size(res);
             };
             async_task::connect(write_fn, ptr, count, op, this);
-        }
-
-        /// internal implementation of putn() from async_streambuf
-        template<typename WriteHandler>
-        void putn_nocopy_impl(const CharType* ptr, size_t count, WriteHandler handler)
-        {
-            size_t res = this->write(ptr, count);
-            async_task::connect(handler, res);
         }
 
         /// internal implementation of getn() from async_streambuf
@@ -438,9 +439,6 @@ namespace streams
             if (!this->can_read())
                 return count;
 
-            // add lock TODO !!!
-            // pplx::extensibility::scoped_critical_section_t l(m_lock);
-
             // Allocate a new block if necessary
             if ( blocks_.empty() || blocks_.back()->wr_chars_left() < count )
             {
@@ -455,6 +453,13 @@ namespace streams
 
             update_write_head(written);
             return written;
+        }
+
+        /// Writes count characters from ptr into the stream buffer
+        size_t write_locked(const CharType* ptr, size_t count)
+        {
+            lib::lock_guard<lib::recursive_mutex> lockg(mutex_);
+            return this->write(ptr, count);
         }
 
         /// Fulfill pending requests
@@ -589,6 +594,9 @@ namespace streams
 
         // Queue of requests
         std::queue<ev_request> requests_;
+
+        // global lock in case of using the write_locked and read_locked functions
+        lib::recursive_mutex mutex_;
     };
 
 }} // namespaces

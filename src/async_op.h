@@ -14,6 +14,8 @@ public:
         func_(this);
     }
 
+    virtual ~async_op_base()
+    {}
 protected:
     typedef void (*func_type)(async_op_base*);
     async_op_base(func_type func_op) : func_(func_op)
@@ -30,6 +32,9 @@ public:
 
     async_op(Handler h)
       : async_op_base(&async_op::do_run), handler_(h)
+    {}
+
+    ~async_op()
     {}
 
     static void do_run(async_op_base* base)
