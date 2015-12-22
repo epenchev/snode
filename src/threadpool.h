@@ -72,7 +72,9 @@ public:
         auto it = queues_index_.find(id);
 
         if (queues_index_.end() == it)
+        {
             throw std::runtime_error(s_threadpool_msg);
+        }
 
         async_op<T>* op = new async_op<T>(task);
         it->second->enqueue(op);
