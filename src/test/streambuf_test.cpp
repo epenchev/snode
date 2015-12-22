@@ -39,7 +39,7 @@ int async_streambuf_test_base(test_func_type func)
     s_block = true;
     while (s_block)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     return 0;
@@ -90,8 +90,31 @@ void test_streambuf_getn()
         s_block = false;
     };
     rbuf->getn(ptarget.get(), size, std::bind(handler_getn, std::placeholders::_1, ptarget, rbuf));
-
 }
+
+void test_streambuf_putc()
+{
+    BOOST_MESSAGE("Start test_streambuf_putc");
+
+    prod_cons_buf_ptr wbuf = std::make_shared<prod_cons_buf_type>(512);
+    auto handler_putc = [](prod_cons_buf_type::char_type ch,  prod_cons_buf_ptr buf)
+    {
+        BOOST_CHECK_NE( prod_cons_buf_type::traits::eof(), ch );
+        BOOST_MESSAGE("End test_streambuf_putc");
+        if ('e' == ch )
+        {
+            BOOST_CHECK_EQUAL( buf->in_avail(), 5 );
+            s_block = false;
+        }
+    };
+
+    wbuf->putc('a', std::bind(handler_putc, std::placeholders::_1, wbuf));
+    wbuf->putc('b', std::bind(handler_putc, std::placeholders::_1, wbuf));
+    wbuf->putc('c', std::bind(handler_putc, std::placeholders::_1, wbuf));
+    wbuf->putc('d', std::bind(handler_putc, std::placeholders::_1, wbuf));
+    wbuf->putc('e', std::bind(handler_putc, std::placeholders::_1, wbuf));
+}
+
 
 // unit test entry point
 test_suite*
@@ -110,6 +133,7 @@ init_unit_test_suite( int argc, char* argv[] )
     boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putn) ) );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_getn) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
 
     return 0;
 }
