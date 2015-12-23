@@ -55,9 +55,9 @@ void test_streambuf_putn()
     {
         const uint8_t data_template[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
         uint8_t target[sizeof(data_template) + 1] = {0};
-        BOOST_REQUIRE_NE( count, 0 );
+        BOOST_CHECK_NE( count, 0 );
         size_t rdbytes = buf->scopy(target, sizeof(target) - 1);
-        BOOST_REQUIRE_NE( rdbytes, 0 );
+        BOOST_CHECK_NE( rdbytes, 0 );
         BOOST_CHECK_EQUAL( std::equal(data_template, data_template + sizeof(data_template), target), true );
         BOOST_MESSAGE("End test_streambuf_putn");
         s_block = false;
@@ -84,7 +84,7 @@ void test_streambuf_getn()
     {
         const uint8_t data_template[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
 
-        BOOST_REQUIRE_NE( count, 0 );
+        BOOST_CHECK_NE( count, 0 );
         BOOST_CHECK_EQUAL( std::equal(data_template, data_template + sizeof(data_template), target.get()), true );
         BOOST_MESSAGE("End test_streambuf_getn");
         s_block = false;
@@ -115,6 +115,58 @@ void test_streambuf_putc()
     wbuf->putc('e', std::bind(handler_putc, std::placeholders::_1, wbuf));
 }
 
+void test_streambuf_alloc_commit()
+{
+    BOOST_MESSAGE("Start test_streambuf_alloc_commit");
+
+    prod_cons_buf_ptr wbuf = std::make_shared<prod_cons_buf_type>(512);
+    BOOST_CHECK_EQUAL(true, wbuf->can_write());
+    BOOST_CHECK_EQUAL(0,    wbuf->in_avail());
+
+    size_t allocSize = 10;
+    size_t commitSize = 2;
+
+    for (size_t i = 0; i < allocSize/commitSize; i++)
+    {
+        // Allocate space for 10 chars
+        auto data = wbuf->alloc(allocSize);
+        BOOST_ASSERT( data != nullptr );
+
+        // commit 2
+        wbuf->commit(commitSize);
+        BOOST_CHECK_EQUAL( (i+1)*commitSize, wbuf->in_avail() );
+    }
+
+    BOOST_CHECK_EQUAL(allocSize, wbuf->in_avail());
+    wbuf->close();
+    BOOST_ASSERT(wbuf->can_write());
+    BOOST_MESSAGE("End test_streambuf_alloc_commit");
+    s_block = false;
+}
+
+void test_streambuf_seek_write()
+{
+    BOOST_MESSAGE("Start test_streambuf_seek_write");
+
+    prod_cons_buf_type wbuf(512);
+    BOOST_CHECK_EQUAL(true, wbuf.can_write());
+    BOOST_CHECK_EQUAL(true, wbuf.can_seek());
+
+    //auto beg = wbuf.seekoff(0, std::ios_base::beg, std::ios_base::out);
+    //auto cur = wbuf.seekoff(0, std::ios_base::cur, std::ios_base::out);
+
+    // current should be at the begining
+    //BOOST_CHECK_EQUAL(beg, cur);
+
+    //auto end = wbuf.seekoff(0, std::ios_base::end, std::ios_base::out);
+    //BOOST_CHECK_EQUAL(end, wbuf.seekpos(end, std::ios_base::out));
+
+    wbuf.close();
+    BOOST_MESSAGE("End test_streambuf_seek_write");
+    //VERIFY_IS_FALSE(wbuf.can_write());
+    //VERIFY_IS_FALSE(wbuf.can_seek());
+}
+
 
 // unit test entry point
 test_suite*
@@ -134,6 +186,7 @@ init_unit_test_suite( int argc, char* argv[] )
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putn) ) );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_getn) ) );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_alloc_commit) ) );
 
     return 0;
 }
