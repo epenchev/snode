@@ -12,7 +12,6 @@
 
 #define BOOST_TEST_LOG_LEVEL all
 #define BOOST_TEST_BUILD_INFO yes
-//#define BOOST_TEST_NO_MAIN
 
 #include <boost/test/included/unit_test.hpp>
 using namespace boost::unit_test;
@@ -20,7 +19,7 @@ using namespace boost::unit_test;
 /*
  * shell compile
  *  g++ -std=c++11 -g -Wall -I../ streambuf_test.cpp ../config_reader.o ../http_helpers.o ../http_msg.o ../http_service.o ../snode_core.o ../uri_utils.o
- *  -o streambuf_test -lpthread -lboost_system -lboost_thread
+   -o streambuf_test -lpthread -lboost_system -lboost_thread
  *
  */
 
@@ -152,8 +151,8 @@ void test_streambuf_seek_write()
     BOOST_CHECK_EQUAL(true, wbuf.can_write());
     BOOST_CHECK_EQUAL(true, wbuf.can_seek());
 
-    //auto beg = wbuf.seekoff(0, std::ios_base::beg, std::ios_base::out);
-    //auto cur = wbuf.seekoff(0, std::ios_base::cur, std::ios_base::out);
+    // auto beg = wbuf.seekoff(0, std::ios_base::beg, std::ios_base::out);з
+    // auto cur = wbuf.seekoff(0, std::ios_base::cur, std::ios_base::out);
 
     // current should be at the begining
     //BOOST_CHECK_EQUAL(beg, cur);
@@ -165,6 +164,170 @@ void test_streambuf_seek_write()
     BOOST_MESSAGE("End test_streambuf_seek_write");
     //VERIFY_IS_FALSE(wbuf.can_write());
     //VERIFY_IS_FALSE(wbuf.can_seek());
+}
+
+template<class StreamBufferTypePtr, class CharType>
+void test_streambuf_getc(StreamBufferTypePtr rbuf, CharType contents)
+{
+    BOOST_MESSAGE("Start test_streambuf_getc");
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
+
+    auto handler_getc = [](CharType ch, StreamBufferTypePtr rbuf)
+    {
+        BOOST_CHECK_NE( snode::streams::char_traits<CharType>::eof(), ch );
+        BOOST_MESSAGE("End test_streambuf_getn");
+        s_block = false;
+    };
+    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, rbuf));
+
+#if 0
+    VERIFY_ARE_EQUAL(c, contents);
+
+    // Calling getc again should return the same character (getc do not advance read head)
+    VERIFY_ARE_EQUAL(c, rbuf.getc().get());
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
+
+    // getc should return eof after close
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.getc().get());
+#endif
+}
+
+void test_producer_consumer_getc()
+{
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    std::vector<uint8_t> s(std::begin(data), std::end(data));
+    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    test_streambuf_getc(buf, s[0]);
+}
+
+template<class StreamBufferType>
+void streambuf_sgetc(StreamBufferType& rbuf, typename StreamBufferType::char_type contents)
+{
+    VERIFY_IS_TRUE(rbuf.can_read());
+
+    auto c = rbuf.sgetc();
+
+    VERIFY_ARE_EQUAL(c, contents);
+
+    // Calling getc again should return the same character (getc do not advance read head)
+    VERIFY_ARE_EQUAL(c, rbuf.sgetc());
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
+
+    // sgetc should return eof after close
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.sgetc());
+}
+
+template<class StreamBufferType>
+void streambuf_bumpc(StreamBufferType& rbuf, const std::vector<typename StreamBufferType::char_type>& contents)
+{
+    VERIFY_IS_TRUE(rbuf.can_read());
+
+    auto c = rbuf.bumpc().get();
+
+    VERIFY_ARE_EQUAL(c, contents[0]);
+
+    // Calling bumpc again should return the next character
+    // Read till eof
+    auto d = rbuf.bumpc().get();
+
+    size_t index = 1;
+
+    while (d != StreamBufferType::traits::eof())
+    {
+        VERIFY_ARE_EQUAL(d, contents[index]);
+        d = rbuf.bumpc().get();
+        index++;
+    }
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
+
+    // operation should return eof after close
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.bumpc().get());
+}
+
+template<class StreamBufferType>
+void streambuf_sbumpc(StreamBufferType& rbuf, const std::vector<typename StreamBufferType::char_type>& contents)
+{
+    VERIFY_IS_TRUE(rbuf.can_read());
+
+    auto c = rbuf.sbumpc();
+
+    VERIFY_ARE_EQUAL(c, contents[0]);
+
+    // Calling sbumpc again should return the next character
+    // Read till eof
+    auto d = rbuf.sbumpc();
+
+    size_t index = 1;
+
+    while (d != StreamBufferType::traits::eof())
+    {
+        VERIFY_ARE_EQUAL(d, contents[index]);
+        d = rbuf.sbumpc();
+        index++;
+    }
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
+
+    // operation should return eof after close
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.sbumpc());
+}
+
+template<class StreamBufferType>
+void streambuf_nextc(StreamBufferType& rbuf, const std::vector<typename StreamBufferType::char_type>& contents)
+{
+    VERIFY_IS_TRUE(rbuf.can_read());
+
+    auto c = rbuf.nextc().get();
+
+    VERIFY_ARE_EQUAL(c, contents[1]);
+
+    // Calling getc should return the same contents as before.
+    VERIFY_ARE_EQUAL(c, rbuf.getc().get());
+
+    size_t index = 1;
+
+    while (c != StreamBufferType::traits::eof())
+    {
+        VERIFY_ARE_EQUAL(c, contents[index]);
+        c = rbuf.nextc().get();
+        index++;
+    }
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
+
+    // operation should return eof after close
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.nextc().get());
+}
+
+template<class StreamBufferType>
+void streambuf_ungetc(StreamBufferType& rbuf, const std::vector<typename StreamBufferType::char_type>& contents)
+{
+    VERIFY_IS_TRUE(rbuf.can_read());
+
+    // ungetc from the begining should return eof
+    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.ungetc().get());
+
+    VERIFY_ARE_EQUAL(contents[0], rbuf.bumpc().get());
+    VERIFY_ARE_EQUAL(contents[1], rbuf.getc().get());
+
+    auto c = rbuf.ungetc().get();
+
+    // ungetc could be unsupported!
+    if (c != StreamBufferType::traits::eof())
+    {
+        VERIFY_ARE_EQUAL(contents[0], c);
+    }
+
+    rbuf.close().get();
+    VERIFY_IS_FALSE(rbuf.can_read());
 }
 
 
@@ -187,6 +350,7 @@ init_unit_test_suite( int argc, char* argv[] )
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_getn) ) );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
     framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_alloc_commit) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_producer_consumer_getc) ) );
 
     return 0;
 }
