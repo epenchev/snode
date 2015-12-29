@@ -395,7 +395,8 @@ namespace streams
                 {
                     int_type value = parent_.read_byte();
                     async_task::connect(&async_streambuf_op_base<CharType>::complete_ch, completion_op_, value);
-                    completion_op_->complete_ch(value);
+                    // This  is really a bug just take the time to make a full investigation for it TODO
+                    // completion_op_->complete_ch(value);
                 }
             }
 

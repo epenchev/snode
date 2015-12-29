@@ -44,6 +44,18 @@ int async_streambuf_test_base(test_func_type func)
     return 0;
 }
 
+prod_cons_buf_ptr create_producer_consumer_buffer_with_data(const std::vector<uint8_t> & s)
+{
+    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    auto target = buf->alloc(s.size());
+    BOOST_ASSERT( target != nullptr );
+    std::copy(s.begin(), s.end(), target);
+    buf->commit(s.size());
+    buf->close(std::ios_base::out);
+    return buf;
+}
+
+
 void test_streambuf_putn()
 {
     uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
@@ -99,10 +111,10 @@ void test_streambuf_putc()
     auto handler_putc = [](prod_cons_buf_type::char_type ch,  prod_cons_buf_ptr buf)
     {
         BOOST_CHECK_NE( prod_cons_buf_type::traits::eof(), ch );
-        BOOST_MESSAGE("End test_streambuf_putc");
         if ('e' == ch )
         {
             BOOST_CHECK_EQUAL( buf->in_avail(), 5 );
+            BOOST_MESSAGE("End test_streambuf_putc");
             s_block = false;
         }
     };
@@ -172,33 +184,26 @@ void test_streambuf_getc(StreamBufferTypePtr rbuf, CharType contents)
     BOOST_MESSAGE("Start test_streambuf_getc");
     BOOST_CHECK_EQUAL(true, rbuf->can_read());
 
-    auto handler_getc = [](CharType ch, StreamBufferTypePtr rbuf)
+    auto handler_getc = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
     {
         BOOST_CHECK_NE( snode::streams::char_traits<CharType>::eof(), ch );
-        BOOST_MESSAGE("End test_streambuf_getn");
+        BOOST_CHECK_EQUAL( contents, ch );
+        BOOST_CHECK_EQUAL( contents, rbuf->sgetc() );
+        rbuf->close();
+        BOOST_CHECK_EQUAL( false, rbuf->can_read());
+        BOOST_CHECK_EQUAL( true, rbuf->can_read());
+        BOOST_CHECK_EQUAL( snode::streams::char_traits<CharType>::eof(), rbuf->sgetc() );
+        BOOST_MESSAGE("End test_streambuf_alloc_commit");
         s_block = false;
     };
-    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, rbuf));
-
-#if 0
-    VERIFY_ARE_EQUAL(c, contents);
-
-    // Calling getc again should return the same character (getc do not advance read head)
-    VERIFY_ARE_EQUAL(c, rbuf.getc().get());
-
-    rbuf.close().get();
-    VERIFY_IS_FALSE(rbuf.can_read());
-
-    // getc should return eof after close
-    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.getc().get());
-#endif
+    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, contents, rbuf));
 }
 
 void test_producer_consumer_getc()
 {
     uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
     std::vector<uint8_t> s(std::begin(data), std::end(data));
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = create_producer_consumer_buffer_with_data(s);
     test_streambuf_getc(buf, s[0]);
 }
 
@@ -346,11 +351,11 @@ init_unit_test_suite( int argc, char* argv[] )
     }
 
     boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
-    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putn) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_getn) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_streambuf_alloc_commit) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( boost::bind(&async_streambuf_test_base, test_producer_consumer_getc) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_putn) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_getn) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_alloc_commit) ) );
+    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_producer_consumer_getc) ) );
 
     return 0;
 }
