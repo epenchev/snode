@@ -87,6 +87,7 @@ void test_streambuf_putn(StreamBufferTypePtr wbuf)
     wbuf->putn(data, sizeof(data), std::bind(handler_putn, std::placeholders::_1, wbuf, s));
 }
 
+// general test function
 template<typename StreamBufferTypePtr, typename CharType>
 void test_streambuf_getn(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
 {
@@ -108,8 +109,36 @@ void test_streambuf_getn(StreamBufferTypePtr rbuf, const std::vector<CharType>& 
             BOOST_MESSAGE("End test_streambuf_getn");
             s_block = false;
         };
-        //buf->getn(ptr, contents.size(), std::bind(handler_fin, std::placeholders::_1, buf));
-        //delete [] ptr;
+        buf->getn(ptr, contents.size(), std::bind(handler_fin, std::placeholders::_1, buf));
+        delete [] ptr;
+    };
+    rbuf->getn(ptr, size, std::bind(handler_getn, std::placeholders::_1, rbuf, contents, ptr));
+}
+
+// specialized producer_consumer_buffer test function
+template<>
+void test_streambuf_getn<prod_cons_buf_ptr, uint8_t>(prod_cons_buf_ptr rbuf, const std::vector<uint8_t>& contents)
+{
+    BOOST_MESSAGE("Start test_streambuf_getn");
+    BOOST_CHECK_EQUAL( true, rbuf->can_write() );
+
+    std::size_t size = contents.size();
+    auto ptr = new uint8_t[size];
+    auto handler_getn = [](size_t count, prod_cons_buf_ptr buf, const std::vector<uint8_t> contents, uint8_t* ptr)
+    {
+        BOOST_CHECK_NE( count, 0 );
+        BOOST_CHECK_EQUAL( std::equal(contents.begin(), contents.end(), ptr), true );
+
+        auto handler_fin = [](size_t count, prod_cons_buf_ptr buf)
+        {
+            BOOST_CHECK_EQUAL( count, 0 );
+            BOOST_CHECK_EQUAL( false, buf->can_read() );
+            BOOST_MESSAGE("End test_streambuf_getn");
+            s_block = false;
+        };
+        buf->close();
+        buf->getn(ptr, contents.size(), std::bind(handler_fin, std::placeholders::_1, buf));
+        delete [] ptr;
     };
     rbuf->getn(ptr, size, std::bind(handler_getn, std::placeholders::_1, rbuf, contents, ptr));
 }
