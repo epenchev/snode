@@ -62,6 +62,50 @@ prod_cons_buf_ptr create_producer_consumer_buffer_with_data(const std::vector<ui
 }
 
 template<typename StreamBufferTypePtr>
+void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
+{
+    BOOST_CHECK_EQUAL(true, rwbuf->is_open());
+    BOOST_CHECK_EQUAL(true, rwbuf->can_read());
+    BOOST_CHECK_EQUAL(true, rwbuf->can_write());
+    BOOST_CHECK_EQUAL(false, rwbuf->is_eof());
+
+    typedef typename StreamBufferTypePtr::element_type::char_type ch_type;
+    std::basic_string<ch_type> s;
+    s.push_back((ch_type)0);
+    s.push_back((ch_type)1);
+    s.push_back((ch_type)2);
+    s.push_back((ch_type)3);
+
+    auto handler_write = [](size_t count, StreamBufferTypePtr wbuf, std::basic_string<ch_type> content)
+    {
+        BOOST_CHECK_EQUAL(count, content.size());
+        wbuf->close(std::ios_base::out);
+    };
+    rwbuf->putn(s.data(), s.size(), std::bind(handler_write, std::placeholders::_1, rwbuf, s));
+
+    typedef std::shared_ptr<std::vector<ch_type>> vector_ptr;
+    vector_ptr ptr = std::make_shared< std::vector<ch_type> >(4);
+    auto handler_read = [](size_t count, StreamBufferTypePtr rbuf, std::basic_string<ch_type> content, vector_ptr ptr)
+    {
+        BOOST_CHECK_EQUAL(count, content.size());
+        for (size_t i = 0; i < count; i++)
+        {
+            BOOST_CHECK_EQUAL(content[i], ptr[i]);
+        }
+        BOOST_CHECK_EQUAL(false, rbuf->is_eof());
+
+        auto handler_fin = [](ch_type ch, StreamBufferTypePtr rbuf)
+        {
+            BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<ch_type>::eof());
+            BOOST_CHECK_EQUAL(true, rbuf->is_eof());
+            finish_test();
+        };
+        rbuf->getc(std::bind(handler_fin, std::placeholders::_1, rbuf));
+    };
+    rwbuf->getn(ptr->data(), ptr->size() * sizeof(ch_type), std::bind(handler_read, std::placeholders::_1, rwbuf, s, ptr));
+}
+
+template<typename StreamBufferTypePtr>
 void test_streambuf_putn(StreamBufferTypePtr wbuf)
 {
     BOOST_CHECK_EQUAL( true, wbuf->can_write()) ;
@@ -169,7 +213,7 @@ void test_streambuf_getn(StreamBufferTypePtr rbuf, const std::vector<CharType>& 
 template<>
 void test_streambuf_getn<prod_cons_buf_ptr, uint8_t>(prod_cons_buf_ptr rbuf, const std::vector<uint8_t>& contents)
 {
-    BOOST_CHECK_EQUAL( true, rbuf->can_read() );
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
 
     std::size_t size = contents.size();
     auto ptr = new uint8_t[size];
@@ -196,16 +240,23 @@ void test_streambuf_getc(StreamBufferTypePtr rbuf, CharType contents)
 {
     BOOST_CHECK_EQUAL(true, rbuf->can_read());
 
-    auto handler_getc = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
+    auto handler_getc = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf, bool done)
     {
         BOOST_CHECK_EQUAL(contents, ch);
-        BOOST_CHECK_EQUAL(contents, rbuf->sgetc());
-        rbuf->close();
-        BOOST_CHECK_EQUAL(false, rbuf->can_read());
-        BOOST_CHECK_EQUAL(snode::streams::char_traits<CharType>::eof(), rbuf->sgetc());
-        finish_test();
+        if (done)
+        {
+            rbuf->close();
+            BOOST_CHECK_EQUAL(false, rbuf->can_read());
+            auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
+            {
+                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                finish_test();
+            };
+            rbuf->getc(std::bind(handler_fin, std::placeholders::_1, rbuf));
+        }
     };
-    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, contents, rbuf));
+    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, contents, rbuf, false));
+    rbuf->getc(std::bind(handler_getc, std::placeholders::_1, contents, rbuf, true));
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
@@ -221,51 +272,39 @@ void test_streambuf_sgetc(StreamBufferTypePtr rbuf, CharType contents)
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
-void streambuf_bumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
+void test_streambuf_bumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
 {
-    BOOST_CHECK_EQUAL( true, rbuf->can_read() );
-    // TOOD make async
-    //auto c = rbuf->bumpc();
-
-    //BOOST_CHECK_EQUAL(c, contents[0]);
-
-    // Calling bumpc again should return the next character
-    // Read till eof
-    //auto d = rbuf.bumpc().get();
-
-    size_t index = 1;
-
-    /*
-    while (d != StreamBufferType::traits::eof())
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
+    auto handler = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
     {
-        VERIFY_ARE_EQUAL(d, contents[index]);
-        d = rbuf.bumpc().get();
-        index++;
-    }
-
-    rbuf.close().get();
-    VERIFY_IS_FALSE(rbuf.can_read());
-
-    // operation should return eof after close
-    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.bumpc().get());
-    */
+        if (snode::streams::char_traits<CharType>::eof() == ch)
+        {
+            rbuf->close();
+            BOOST_CHECK_EQUAL(false, rbuf->can_read());
+            auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
+            {
+                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                finish_test();
+            };
+            rbuf->bumpc(std::bind(handler_fin, std::placeholders::_1, rbuf));
+            return;
+        }
+        BOOST_CHECK_EQUAL(ch, contents);
+        BOOST_CHECK_NE(rbuf->sgetc(), contents);
+    };
+    for (auto& it : contents)
+        rbuf->bumpc(std::bind(handler, std::placeholders::_1, it, rbuf));
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
 void streambuf_sbumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
 {
-    BOOST_CHECK_EQUAL( true, rbuf->can_read() );
-
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
     auto c = rbuf->sbumpc();
-
     BOOST_CHECK_EQUAL(c, contents[0]);
 
-    // Calling sbumpc again should return the next character
-    // Read till eof
     auto d = rbuf->sbumpc();
-
     size_t index = 1;
-
     while (d != snode::streams::char_traits<CharType>::eof())
     {
         BOOST_CHECK_EQUAL(d, contents[index]);
@@ -274,73 +313,68 @@ void streambuf_sbumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& con
     }
 
     rbuf->close();
-    BOOST_CHECK_EQUAL( false, rbuf->can_read() );
-
-    // operation should return eof after close
+    BOOST_CHECK_EQUAL(false, rbuf->can_read());
     BOOST_CHECK_EQUAL( snode::streams::char_traits<CharType>::eof(), rbuf->sbumpc()) ;
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
 void streambuf_nextc(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
 {
-    BOOST_CHECK_EQUAL( true, rbuf->can_read() );
-
-    /*
-    auto c = rbuf.nextc().get();
-
-    VERIFY_ARE_EQUAL(c, contents[1]);
-
-    // Calling getc should return the same contents as before.
-    VERIFY_ARE_EQUAL(c, rbuf.getc().get());
-
-    size_t index = 1;
-
-    while (c != StreamBufferType::traits::eof())
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
+    auto handler = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
     {
-        VERIFY_ARE_EQUAL(c, contents[index]);
-        c = rbuf.nextc().get();
-        index++;
-    }
-
-    rbuf.close().get();
-    VERIFY_IS_FALSE(rbuf.can_read());
-
-    // operation should return eof after close
-    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.nextc().get());
-    */
+        if (snode::streams::char_traits<CharType>::eof() == ch)
+        {
+            rbuf->close();
+            BOOST_CHECK_EQUAL(false, rbuf->can_read());
+            auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
+            {
+                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                finish_test();
+            };
+            rbuf->nextc(std::bind(handler_fin, std::placeholders::_1, rbuf));
+            return;
+        }
+        BOOST_CHECK_EQUAL(ch, contents);
+        BOOST_CHECK_NE(rbuf->sgetc(), contents);
+    };
+    for (auto& it : contents)
+        rbuf->nextc(std::bind(handler, std::placeholders::_1, it + 1, rbuf));
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
 void streambuf_ungetc(StreamBufferTypePtr rbuf, const std::vector<CharType>& contents)
 {
-    BOOST_CHECK_EQUAL( true, rbuf->can_read() );
+    BOOST_CHECK_EQUAL(true, rbuf->can_read());
 
-    /*
-    // ungetc from the begining should return eof
-    VERIFY_ARE_EQUAL(StreamBufferType::traits::eof(), rbuf.ungetc().get());
-
-    VERIFY_ARE_EQUAL(contents[0], rbuf.bumpc().get());
-    VERIFY_ARE_EQUAL(contents[1], rbuf.getc().get());
-
-    auto c = rbuf.ungetc().get();
-
-    // ungetc could be unsupported!
-    if (c != StreamBufferType::traits::eof())
+    auto handler = [](CharType ch, std::vector<CharType> contents, StreamBufferTypePtr rbuf)
     {
-        VERIFY_ARE_EQUAL(contents[0], c);
-    }
+        // ungetc from the begining should return eof
+        BOOST_CHECK_EQUAL(ch , snode::streams::char_traits<CharType>::eof());
+        VERIFY_ARE_EQUAL(contents[0], rbuf->sbumpc());
+        VERIFY_ARE_EQUAL(contents[1], rbuf->sgetc());
 
-    rbuf.close().get();
-    VERIFY_IS_FALSE(rbuf.can_read());
-    */
+        auto handler_fin = [](CharType ch, std::vector<CharType> contents, StreamBufferTypePtr rbuf)
+        {
+            // ungetc could be unsupported!
+            if (ch != snode::streams::char_traits<CharType>::eof())
+            {
+                BOOST_CHECK_EQUAL(contents[0], ch);
+            }
+            rbuf->close();
+            BOOST_CHECK_EQUAL(false, rbuf->can_read());
+            finish_test();
+        };
+        rbuf->ungetc(std::bind(handler_fin, std::placeholders::_1, contents, rbuf));
+    };
+    rbuf->ungetc(std::bind(handler, std::placeholders::_1, contents, rbuf));
 }
 
-
-void test_streambuf_alloc_commit()
+template<typename StreamBufferTypePtr>
+void test_streambuf_alloc_commit(StreamBufferTypePtr wbuf)
 {
-    prod_cons_buf_ptr wbuf = std::make_shared<prod_cons_buf_type>(512);
     BOOST_CHECK_EQUAL(true, wbuf->can_write());
-    BOOST_CHECK_EQUAL(0,    wbuf->in_avail());
+    BOOST_CHECK_EQUAL(0, wbuf->in_avail());
 
     size_t allocSize = 10;
     size_t commitSize = 2;
@@ -349,37 +383,38 @@ void test_streambuf_alloc_commit()
     {
         // Allocate space for 10 chars
         auto data = wbuf->alloc(allocSize);
-        BOOST_ASSERT( data != nullptr );
+        BOOST_ASSERT(data != nullptr);
 
         // commit 2
         wbuf->commit(commitSize);
-        BOOST_CHECK_EQUAL( (i+1)*commitSize, wbuf->in_avail() );
+        BOOST_CHECK_EQUAL((i+1)*commitSize, wbuf->in_avail());
     }
 
     BOOST_CHECK_EQUAL(allocSize, wbuf->in_avail());
     wbuf->close();
     BOOST_ASSERT(wbuf->can_write());
-    s_block = false;
+    finish_test();
 }
 
-void test_streambuf_seek_write()
+template<typename StreamBufferTypePtr>
+void test_streambuf_seek_write(StreamBufferTypePtr wbuf)
 {
-    prod_cons_buf_type wbuf(512);
     BOOST_CHECK_EQUAL(true, wbuf.can_write());
     BOOST_CHECK_EQUAL(true, wbuf.can_seek());
 
-    // auto beg = wbuf.seekoff(0, std::ios_base::beg, std::ios_base::out);з
-    // auto cur = wbuf.seekoff(0, std::ios_base::cur, std::ios_base::out);
+    auto beg = wbuf->seekoff(0, std::ios_base::beg, std::ios_base::out);
+    auto cur = wbuf->seekoff(0, std::ios_base::cur, std::ios_base::out);
 
-    // current should be at the begining
-    //BOOST_CHECK_EQUAL(beg, cur);
+    // current should be at the beginning
+    BOOST_CHECK_EQUAL(beg, cur);
 
-    //auto end = wbuf.seekoff(0, std::ios_base::end, std::ios_base::out);
-    //BOOST_CHECK_EQUAL(end, wbuf.seekpos(end, std::ios_base::out));
+    auto end = wbuf->seekoff(0, std::ios_base::end, std::ios_base::out);
+    BOOST_CHECK_EQUAL(end, wbuf->seekpos(end, std::ios_base::out));
 
     wbuf.close();
-    //VERIFY_IS_FALSE(wbuf.can_write());
-    //VERIFY_IS_FALSE(wbuf.can_seek());
+    BOOST_CHECK_EQUAL(false, wbuf->can_write());
+    BOOST_CHECK_EQUAL(false, wbuf->can_seek());
+    finish_test();
 }
 
 void test_producer_consumer_getc()
@@ -398,7 +433,6 @@ void test_producer_consumer_sgetc()
     test_streambuf_sgetc(buf, s[0]);
 }
 
-
 void test_producer_consumer_getn()
 {
     uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
@@ -413,10 +447,46 @@ void test_producer_consumer_putn()
     test_streambuf_putn(buf);
 }
 
+void test_producer_consumer_putn_getn()
+{
+    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    /* test_streambuf_putn_getn(buf); */
+}
+
 void test_producer_consumer_putc()
 {
     prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
     test_streambuf_putc(buf);
+}
+
+void test_producer_consumer_bumpc()
+{
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    std::vector<uint8_t> s(std::begin(data), std::end(data));
+    prod_cons_buf_ptr buf = create_producer_consumer_buffer_with_data(s);
+    test_streambuf_bumpc(buf, s);
+}
+
+void test_producer_consumer_sbumpc()
+{
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    std::vector<uint8_t> s(std::begin(data), std::end(data));
+    prod_cons_buf_ptr buf = create_producer_consumer_buffer_with_data(s);
+    test_streambuf_bumpc(buf, s);
+}
+
+void test_producer_consumer_nextc()
+{
+    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+    std::vector<uint8_t> s(std::begin(data), std::end(data));
+    prod_cons_buf_ptr buf = create_producer_consumer_buffer_with_data(s);
+    test_streambuf_bumpc(buf, s);
+}
+
+void test_producer_consumer_alloc_commt()
+{
+    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    test_streambuf_alloc_commit(buf);
 }
 
 // unit test entry point
@@ -438,21 +508,21 @@ init_unit_test_suite( int argc, char* argv[] )
     auto test_case_producer_consumer_putn = std::bind(&async_streambuf_test_base, test_producer_consumer_putn);
     auto test_case_producer_consumer_putc = std::bind(&async_streambuf_test_base, test_producer_consumer_putc);
     auto test_case_producer_consumer_getn = std::bind(&async_streambuf_test_base, test_producer_consumer_getn);
+    auto test_case_producer_consumer_putn_getn = std::bind(&async_streambuf_test_base, test_producer_consumer_putn_getn);
     auto test_case_producer_consumer_getc = std::bind(&async_streambuf_test_base, test_producer_consumer_getc);
     auto test_case_producer_consumer_sgetc = std::bind(&async_streambuf_test_base, test_producer_consumer_sgetc);
+    auto test_case_producer_consumer_bumpc = std::bind(&async_streambuf_test_base, test_producer_consumer_bumpc);
+    auto test_case_producer_consumer_alloc_commt = std::bind(&async_streambuf_test_base, test_producer_consumer_alloc_commt);
 
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_putn));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_putc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_getn));
+    framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_putn_getn));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_getc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_sgetc));
+    framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_bumpc));
+    framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_alloc_commt));
 
-    /*
-    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_producer_consumer_getn) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_putc) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_streambuf_alloc_commit) ) );
-    framework::master_test_suite().add( BOOST_TEST_CASE( std::bind(&async_streambuf_test_base, test_producer_consumer_getc) ) );
-    */
     return 0;
 }
 
