@@ -69,6 +69,7 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
     BOOST_CHECK_EQUAL(true, rwbuf->can_write());
     BOOST_CHECK_EQUAL(false, rwbuf->is_eof());
 
+    typedef typename StreamBufferTypePtr::element_type::int_type int_type;
     typedef typename StreamBufferTypePtr::element_type::char_type ch_type;
     std::basic_string<ch_type> s;
     s.push_back((ch_type)0);
@@ -94,7 +95,7 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
         }
         BOOST_CHECK_EQUAL(false, rbuf->is_eof());
 
-        auto handler_fin = [](ch_type ch, StreamBufferTypePtr rbuf)
+        auto handler_fin = [](int_type ch, StreamBufferTypePtr rbuf)
         {
             BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<ch_type>::eof());
             BOOST_CHECK_EQUAL(true, rbuf->is_eof());
@@ -148,6 +149,7 @@ void test_streambuf_putc(StreamBufferTypePtr wbuf)
 {
     BOOST_CHECK_EQUAL(true, wbuf->can_write()) ;
     typedef typename StreamBufferTypePtr::element_type::char_type ch_type;
+    typedef typename StreamBufferTypePtr::element_type::int_type int_type;
 
     std::basic_string<ch_type> s;
     s.push_back((ch_type)0);
@@ -157,7 +159,7 @@ void test_streambuf_putc(StreamBufferTypePtr wbuf)
 
     auto handler_putc = [](ch_type ch, prod_cons_buf_ptr wbuf, std::basic_string<ch_type> contents)
     {
-        BOOST_CHECK_NE(prod_cons_buf_type::traits::eof(), ch);
+        BOOST_CHECK_NE((ch_type)prod_cons_buf_type::traits::eof(), ch);
         if (contents[3] == ch)
         {
             BOOST_CHECK_EQUAL(wbuf->in_avail(), contents.size());
@@ -165,7 +167,7 @@ void test_streambuf_putc(StreamBufferTypePtr wbuf)
             BOOST_CHECK_EQUAL(false, wbuf->can_write());
             auto handler_fin = [](ch_type ch, prod_cons_buf_ptr wbuf)
             {
-                BOOST_CHECK_EQUAL(snode::streams::char_traits<ch_type>::eof(), ch);
+                BOOST_CHECK_EQUAL((ch_type)snode::streams::char_traits<ch_type>::eof(), ch);
                 finish_test();
             };
             wbuf->putc(contents[0], std::bind(handler_fin, std::placeholders::_1, wbuf));
@@ -249,7 +251,7 @@ void test_streambuf_getc(StreamBufferTypePtr rbuf, CharType contents)
             BOOST_CHECK_EQUAL(false, rbuf->can_read());
             auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
             {
-                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                BOOST_CHECK_EQUAL(ch, (CharType)snode::streams::char_traits<CharType>::eof());
                 finish_test();
             };
             rbuf->getc(std::bind(handler_fin, std::placeholders::_1, rbuf));
@@ -268,7 +270,7 @@ void test_streambuf_sgetc(StreamBufferTypePtr rbuf, CharType contents)
     BOOST_CHECK_EQUAL(c, rbuf->sgetc());
     rbuf->close();
     BOOST_CHECK_EQUAL(false, rbuf->can_read());
-    BOOST_CHECK_EQUAL(snode::streams::char_traits<CharType>::eof(), rbuf->sgetc());
+    BOOST_CHECK_EQUAL((CharType)snode::streams::char_traits<CharType>::eof(), rbuf->sgetc());
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
@@ -277,13 +279,13 @@ void test_streambuf_bumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>&
     BOOST_CHECK_EQUAL(true, rbuf->can_read());
     auto handler = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
     {
-        if (snode::streams::char_traits<CharType>::eof() == ch)
+        if ((CharType)snode::streams::char_traits<CharType>::eof() == ch)
         {
             rbuf->close();
             BOOST_CHECK_EQUAL(false, rbuf->can_read());
             auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
             {
-                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                BOOST_CHECK_EQUAL(ch, (CharType)snode::streams::char_traits<CharType>::eof());
                 finish_test();
             };
             rbuf->bumpc(std::bind(handler_fin, std::placeholders::_1, rbuf));
@@ -305,7 +307,7 @@ void streambuf_sbumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& con
 
     auto d = rbuf->sbumpc();
     size_t index = 1;
-    while (d != snode::streams::char_traits<CharType>::eof())
+    while (d != (CharType)snode::streams::char_traits<CharType>::eof())
     {
         BOOST_CHECK_EQUAL(d, contents[index]);
         d = rbuf->sbumpc();
@@ -314,7 +316,7 @@ void streambuf_sbumpc(StreamBufferTypePtr rbuf, const std::vector<CharType>& con
 
     rbuf->close();
     BOOST_CHECK_EQUAL(false, rbuf->can_read());
-    BOOST_CHECK_EQUAL( snode::streams::char_traits<CharType>::eof(), rbuf->sbumpc()) ;
+    BOOST_CHECK_EQUAL((CharType)snode::streams::char_traits<CharType>::eof(), rbuf->sbumpc()) ;
 }
 
 template<typename StreamBufferTypePtr, typename CharType>
@@ -323,13 +325,13 @@ void streambuf_nextc(StreamBufferTypePtr rbuf, const std::vector<CharType>& cont
     BOOST_CHECK_EQUAL(true, rbuf->can_read());
     auto handler = [](CharType ch, CharType contents, StreamBufferTypePtr rbuf)
     {
-        if (snode::streams::char_traits<CharType>::eof() == ch)
+        if ((CharType)snode::streams::char_traits<CharType>::eof() == ch)
         {
             rbuf->close();
             BOOST_CHECK_EQUAL(false, rbuf->can_read());
             auto handler_fin = [](CharType ch, StreamBufferTypePtr rbuf)
             {
-                BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<CharType>::eof());
+                BOOST_CHECK_EQUAL(ch, (CharType)snode::streams::char_traits<CharType>::eof());
                 finish_test();
             };
             rbuf->nextc(std::bind(handler_fin, std::placeholders::_1, rbuf));
@@ -350,14 +352,14 @@ void streambuf_ungetc(StreamBufferTypePtr rbuf, const std::vector<CharType>& con
     auto handler = [](CharType ch, std::vector<CharType> contents, StreamBufferTypePtr rbuf)
     {
         // ungetc from the begining should return eof
-        BOOST_CHECK_EQUAL(ch , snode::streams::char_traits<CharType>::eof());
+        BOOST_CHECK_EQUAL(ch , (CharType)snode::streams::char_traits<CharType>::eof());
         VERIFY_ARE_EQUAL(contents[0], rbuf->sbumpc());
         VERIFY_ARE_EQUAL(contents[1], rbuf->sgetc());
 
         auto handler_fin = [](CharType ch, std::vector<CharType> contents, StreamBufferTypePtr rbuf)
         {
             // ungetc could be unsupported!
-            if (ch != snode::streams::char_traits<CharType>::eof())
+            if (ch != (CharType)snode::streams::char_traits<CharType>::eof())
             {
                 BOOST_CHECK_EQUAL(contents[0], ch);
             }

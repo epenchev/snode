@@ -42,6 +42,13 @@ namespace streams
             synced_(0)
         {}
 
+        /// Destructor
+        virtual ~producer_consumer_buffer()
+        {
+            this->close();
+            blocks_.clear();
+        }
+
         /// internal implementation of can_seek() from async_streambuf
         bool can_seek_impl() const { return false; }
 
@@ -266,12 +273,18 @@ namespace streams
 
         void close_read_impl()
         {
-            // todo implementation
+            this->close_read();
         }
 
         void close_write_impl()
         {
-            // todo implementation
+            // First indicate that there could be no more writes.
+            // Fulfill outstanding relies on that to flush all the
+            // read requests.
+            this->close_write();
+
+            // This runs on the thread that called close.
+            this->fulfill_outstanding();
         }
 
     private:
@@ -407,20 +420,6 @@ namespace streams
             async_streambuf_op_base<CharType>* completion_op_;
         };
 
-        /// Close the stream buffer for writing
-        void _close_write()
-        {
-            // First indicate that there could be no more writes.
-            // Fulfill outstanding relies on that to flush all the
-            // read requests.
-            this->stream_can_write_ = false;
-
-            // pplx::extensibility::scoped_critical_section_t l(this->m_lock);
-
-            // This runs on the thread that called close.
-            this->fulfill_outstanding();
-        }
-
         /// Updates the write head by an offset specified by count
         /// This should be called with the lock held.
         void update_write_head(size_t count)
@@ -464,10 +463,9 @@ namespace streams
         }
 
         /// Fulfill pending requests
-        /// This should be called with the lock held.
         void fulfill_outstanding()
         {
-            while ( !requests_.empty() )
+            while (!requests_.empty())
             {
                 auto req = requests_.front();
 

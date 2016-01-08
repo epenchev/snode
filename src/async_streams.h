@@ -320,9 +320,9 @@ namespace streams
         void putc(CharType ch, WriteHandler handler)
         {
             if (!can_write())
-                throw std::runtime_error(utils::s_in_streambuf_msg);
-
-            get_impl()->putc_impl(ch, handler);
+                async_task::connect(handler, traits::eof());
+            else
+                get_impl()->putc_impl(ch, handler);
         }
 
         /// Writes a number (count) of characters to the stream buffer from source memory (ptr),
@@ -333,13 +333,13 @@ namespace streams
         template<typename WriteHandler>
         void putn(const CharType* ptr, size_t count, WriteHandler handler)
         {
-            if (!can_write())
-                throw std::runtime_error(utils::s_in_streambuf_msg);
-
-            if (count == 0)
-                async_task::connect(handler, 0);
-            else
-                get_impl()->putn_impl(ptr, count, handler);
+            if (count)
+            {
+                if (!can_write())
+                    async_task::connect(handler, 0);
+                else
+                    get_impl()->putn_impl(ptr, count, handler);
+            }
         }
 
         /// Writes a number (count) of characters to the stream from source memory (ptr).
@@ -353,7 +353,7 @@ namespace streams
             if (count)
             {
                 if (!can_write())
-                    throw std::runtime_error(utils::s_in_streambuf_msg);
+                    async_task::connect(handler, 0);
                 else
                     get_impl()->putn_nocopy(ptr, count);
             }
@@ -390,9 +390,9 @@ namespace streams
         void getc(ReadHandler handler)
         {
             if (!can_read())
-                throw std::runtime_error(utils::s_out_streambuf_msg);
-
-            get_impl()->getc_impl(handler);
+                async_task::connect(handler, traits::eof());
+            else
+                get_impl()->getc_impl(handler);
         }
 
         /// Reads a single character from the stream without advancing the read position.
@@ -438,13 +438,13 @@ namespace streams
         template<typename ReadHandler>
         void getn(CharType* ptr, size_t count, ReadHandler handler)
         {
-            if (!can_read())
-                throw std::runtime_error(utils::s_out_stream_msg);
-
-            if (!count)
-                async_task::connect(handler, 0);
-            else
-                get_impl()->getn_impl(ptr, count, handler);
+            if (count)
+            {
+                if (!can_read())
+                    async_task::connect(handler, 0);
+                else
+                    get_impl()->getn_impl(ptr, count, handler);
+            }
         }
 
         /// Copies up to a given number (count) of characters from the stream to memory (ptr) synchronously.
