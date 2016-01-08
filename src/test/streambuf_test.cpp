@@ -83,14 +83,14 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
     };
     rwbuf->putn(s.data(), s.size(), std::bind(handler_write, std::placeholders::_1, rwbuf, s));
 
-    typedef std::shared_ptr<std::vector<ch_type>> vector_ptr;
+    typedef std::shared_ptr<std::vector<ch_type> > vector_ptr;
     vector_ptr ptr = std::make_shared< std::vector<ch_type> >(4);
     auto handler_read = [](size_t count, StreamBufferTypePtr rbuf, std::basic_string<ch_type> content, vector_ptr ptr)
     {
         BOOST_CHECK_EQUAL(count, content.size());
         for (size_t i = 0; i < count; i++)
         {
-            BOOST_CHECK_EQUAL(content[i], ptr[i]);
+            BOOST_CHECK_EQUAL(content[i], ptr->at(i));
         }
         BOOST_CHECK_EQUAL(false, rbuf->is_eof());
 
@@ -108,7 +108,7 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
 template<typename StreamBufferTypePtr>
 void test_streambuf_putn(StreamBufferTypePtr wbuf)
 {
-    BOOST_CHECK_EQUAL( true, wbuf->can_write()) ;
+    BOOST_CHECK_EQUAL(true, wbuf->can_write());
     typedef typename StreamBufferTypePtr::element_type::char_type ch_type;
 
     std::basic_string<ch_type> s;
@@ -450,7 +450,7 @@ void test_producer_consumer_putn()
 void test_producer_consumer_putn_getn()
 {
     prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
-    /* test_streambuf_putn_getn(buf); */
+    test_streambuf_putn_getn(buf);
 }
 
 void test_producer_consumer_putc()
