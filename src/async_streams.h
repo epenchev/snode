@@ -367,9 +367,9 @@ namespace streams
         void bumpc(ReadHandler handler)
         {
             if (!can_read())
-                throw std::runtime_error(utils::s_out_streambuf_msg);
-
-            get_impl()->bumpc_impl(handler);
+            	async_task::connect(handler, traits::eof());
+            else
+            	get_impl()->bumpc_impl(handler);
         }
 
         /// Reads a single character from the stream and advances the read position.
