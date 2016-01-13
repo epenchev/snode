@@ -69,7 +69,6 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
     BOOST_CHECK_EQUAL(true, rwbuf->can_write());
     BOOST_CHECK_EQUAL(false, rwbuf->is_eof());
 
-    typedef typename StreamBufferTypePtr::element_type::int_type int_type;
     typedef typename StreamBufferTypePtr::element_type::char_type ch_type;
     std::basic_string<ch_type> s;
     s.push_back((ch_type)0);
@@ -95,13 +94,9 @@ void test_streambuf_putn_getn(StreamBufferTypePtr rwbuf)
         }
         BOOST_CHECK_EQUAL(false, rbuf->is_eof());
 
-        auto handler_fin = [](int_type ch, StreamBufferTypePtr rbuf)
-        {
-            BOOST_CHECK_EQUAL(ch, snode::streams::char_traits<ch_type>::eof());
-            BOOST_CHECK_EQUAL(true, rbuf->is_eof());
-            finish_test();
-        };
-        rbuf->getc(std::bind(handler_fin, std::placeholders::_1, rbuf));
+        BOOST_CHECK_EQUAL(rbuf->sgetc(), snode::streams::char_traits<ch_type>::eof());
+        BOOST_CHECK_EQUAL(true, rbuf->is_eof());
+        finish_test();
     };
     rwbuf->getn(ptr->data(), ptr->size() * sizeof(ch_type), std::bind(handler_read, std::placeholders::_1, rwbuf, s, ptr));
 }
@@ -243,7 +238,6 @@ void test_streambuf_getc(StreamBufferTypePtr rbuf, CharType contents)
     BOOST_CHECK_EQUAL(true, rbuf->can_read());
 
     typedef typename StreamBufferTypePtr::element_type::int_type int_type;
-
     auto handler_getc = [](int_type ch, CharType contents, StreamBufferTypePtr rbuf, bool done)
     {
         BOOST_CHECK_EQUAL(contents, ch);
@@ -430,14 +424,6 @@ void test_streambuf_seek_write(StreamBufferTypePtr wbuf)
     finish_test();
 }
 
-void test_producer_consumer_getc()
-{
-    uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
-    std::vector<uint8_t> s(std::begin(data), std::end(data));
-    prod_cons_buf_ptr buf = create_producer_consumer_buffer_with_data(s);
-    test_streambuf_getc(buf, s[0]);
-}
-
 void test_producer_consumer_sgetc()
 {
     uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
@@ -507,7 +493,7 @@ test_suite*
 init_unit_test_suite( int argc, char* argv[] )
 {
     const char* config_path = "/home/emo/workspace/snode/src/conf.xml";
-    BOOST_TEST_MESSAGE( "Starting tests" );
+    BOOST_TEST_MESSAGE("Starting tests");
 
     snode::snode_core& server = snode::snode_core::instance();
     server.init(config_path);
@@ -516,13 +502,12 @@ init_unit_test_suite( int argc, char* argv[] )
         BOOST_THROW_EXCEPTION( std::logic_error(server.get_config().error().message().c_str()) );
     }
 
-    boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
+    // boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
 
     auto test_case_producer_consumer_putn = std::bind(&async_streambuf_test_base, test_producer_consumer_putn);
     auto test_case_producer_consumer_putc = std::bind(&async_streambuf_test_base, test_producer_consumer_putc);
     auto test_case_producer_consumer_getn = std::bind(&async_streambuf_test_base, test_producer_consumer_getn);
     auto test_case_producer_consumer_putn_getn = std::bind(&async_streambuf_test_base, test_producer_consumer_putn_getn);
-    auto test_case_producer_consumer_getc = std::bind(&async_streambuf_test_base, test_producer_consumer_getc);
     auto test_case_producer_consumer_sgetc = std::bind(&async_streambuf_test_base, test_producer_consumer_sgetc);
     auto test_case_producer_consumer_bumpc = std::bind(&async_streambuf_test_base, test_producer_consumer_bumpc);
     auto test_case_producer_consumer_alloc_commt = std::bind(&async_streambuf_test_base, test_producer_consumer_alloc_commt);
@@ -531,7 +516,6 @@ init_unit_test_suite( int argc, char* argv[] )
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_putc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_getn));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_putn_getn));
-    framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_getc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_sgetc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_bumpc));
     framework::master_test_suite().add(BOOST_TEST_CASE(test_case_producer_consumer_alloc_commt));
