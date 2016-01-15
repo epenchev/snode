@@ -61,15 +61,15 @@ public:
     {
         // Invoke the synchronous versions since we need to
         // purge the request queue before deleting the buffer
-        this->close_read_impl();
-        this->close_write_impl();
+        this->close_read();
+        this->close_write();
     }
 
     /// internal implementation of can_seek() from async_streambuf
-    bool can_seek_impl() { return this->is_open(); }
+    bool can_seek() { return this->is_open(); }
 
     /// internal implementation of has_size() from async_streambuf
-    bool has_size_impl() { return this->is_open(); }
+    bool has_size() { return this->is_open(); }
 
     /// Gets the size of the stream, if known. Calls to has_size() will determine whether
     /// the result of size can be relied on.
@@ -79,7 +79,7 @@ public:
     }
 
     /// internal implementation of buffer_size() from async_streambuf
-    size_t buffer_size_impl(std::ios_base::openmode = std::ios_base::in) const
+    size_t buffer_size(std::ios_base::openmode = std::ios_base::in) const
     {
         return 0;
     }
@@ -93,7 +93,7 @@ public:
     }
 
     /// internal implementation of in_avail() from async_streambuf
-    size_t in_avail_impl() const
+    size_t in_avail() const
     {
         // See the comment in seek around the restriction that we do not allow read head to
         // seek beyond the current write_end.
@@ -105,14 +105,14 @@ public:
     }
 
     /// internal implementation of sync() from async_streambuf
-    bool sync_impl()
+    bool sync()
     {
         return (true);
     }
 
     /// internal implementation of putc() from async_streambuf
     template<typename WriteHandler>
-    void putc_impl(CharType ch, WriteHandler handler)
+    void putc(CharType ch, WriteHandler handler)
     {
         int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
         async_task::connect(handler, res);
@@ -120,14 +120,14 @@ public:
 
     /// internal implementation of putn() from async_streambuf
     template<typename WriteHandler>
-    void putn_impl(CharType* ptr, size_t count, WriteHandler handler)
+    void putn(CharType* ptr, size_t count, WriteHandler handler)
     {
         size_t res = this->write(ptr, count);
         async_task::connect(handler, res);
     }
 
     /// internal implementation of alloc() from async_streambuf
-    CharType* alloc_impl(size_t count)
+    CharType* alloc(size_t count)
     {
         if (!this->can_write()) return nullptr;
 
@@ -139,21 +139,21 @@ public:
     }
 
     /// internal implementation of commit() from async_streambuf
-    void commit_impl(size_t count)
+    void commit(size_t count)
     {
         // Update the write position and satisfy any pending reads
         update_current_position(current_position_ + count);
     }
 
     /// internal implementation of acquire() from async_streambuf
-    bool acquire_impl(CharType*& ptr, size_t& count)
+    bool acquire(CharType*& ptr, size_t& count)
     {
         ptr = nullptr;
         count = 0;
 
         if (!this->can_read()) return false;
 
-        count = in_avail_impl();
+        count = in_avail();
 
         if (count > 0)
         {
@@ -169,7 +169,7 @@ public:
     }
 
     /// internal implementation of release() from async_streambuf
-    void release_impl(CharType* ptr, size_t count)
+    void release(CharType* ptr, size_t count)
     {
         if (ptr != nullptr)
         {
@@ -179,48 +179,48 @@ public:
 
     /// internal implementation of getn() from async_streambuf
     template<typename ReadHandler>
-    void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
+    void getn(CharType* ptr, size_t count, ReadHandler handler)
     {
         int_type res = this->read(ptr, count);
         async_task::connect(handler, res);
     }
 
     /// internal implementation of sgetn() from async_streambuf
-    size_t sgetn_impl(CharType* ptr, size_t count)
+    size_t sgetn(CharType* ptr, size_t count)
     {
         return this->read(ptr, count);
     }
 
     /// internal implementation of scopy() from async_streambuf
-    size_t scopy_impl(CharType* ptr, size_t count)
+    size_t scopy(CharType* ptr, size_t count)
     {
         return this->read(ptr, count, false);
     }
 
     /// internal implementation of bumpc() from async_streambuf
     template<typename ReadHandler>
-    void bumpc_impl(ReadHandler handler)
+    void bumpc(ReadHandler handler)
     {
         int_type res = this->read_byte(true);
         async_task::connect(handler, res);
     }
 
     /// internal implementation of sbumpc() from async_streambuf
-    int_type sbumpc_impl()
+    int_type sbumpc()
     {
         return this->read_byte(true);
     }
 
     /// internal implementation of getc() from async_streambuf
     template<typename ReadHandler>
-    void getc_impl(ReadHandler handler)
+    void getc(ReadHandler handler)
     {
         int_type res = this->read_byte(false);
         async_task::connect(handler, res);
     }
 
     /// internal implementation of sgetc() from async_streambuf
-    int_type sgetc_impl()
+    int_type sgetc()
     {
         // add lock ?
         return this->read_byte(false);
@@ -228,7 +228,7 @@ public:
 
     /// internal implementation of nextc() from async_streambuf
     template<typename ReadHandler>
-    void nextc_impl(ReadHandler handler)
+    void nextc(ReadHandler handler)
     {
         int_type res = this->read_byte(true);
         async_task::connect(handler, res);
@@ -236,7 +236,7 @@ public:
 
     /// internal implementation of ungetc() from async_streambuf
     template<typename ReadHandler>
-    void ungetc_impl(ReadHandler handler)
+    void ungetc(ReadHandler handler)
     {
         /*
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
@@ -247,7 +247,7 @@ public:
     }
 
     /// internal implementation of getpos() from async_streambuf
-    pos_type getpos_impl(std::ios_base::openmode mode) const
+    pos_type getpos(std::ios_base::openmode mode) const
     {
         if ( ((mode & std::ios_base::in) && !this->can_read()) ||
              ((mode & std::ios_base::out) && !this->can_write()))
@@ -259,7 +259,7 @@ public:
     }
 
     /// Seeks to the given position implementation.
-    pos_type seekpos_impl(pos_type position, std::ios_base::openmode mode)
+    pos_type seekpos(pos_type position, std::ios_base::openmode mode)
     {
         pos_type beg(0);
 
@@ -304,7 +304,7 @@ public:
     }
 
     /// Seeks to a position given by a relative offset implementation.
-    pos_type seekoff_impl(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
+    pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
     {
         pos_type beg = 0;
         pos_type cur = static_cast<pos_type>(current_position_);
@@ -326,12 +326,12 @@ public:
         }
     }
 
-    void close_read_impl()
+    void close_read()
     {
         // todo implementation
     }
 
-    void close_write_impl()
+    void close_write()
     {
         // todo implementation
     }
@@ -352,7 +352,7 @@ private:
     {
         // We can always satisfy a read, at least partially, unless the
         // read position is at the very end of the buffer.
-        return (in_avail_impl() > 0);
+        return (in_avail() > 0);
     }
 
     /// <summary>
@@ -378,7 +378,7 @@ private:
         }
 
         size_t request_size(count);
-        size_t read_size = std::min(request_size, in_avail_impl());
+        size_t read_size = std::min(request_size, in_avail());
 
         size_t newpos = current_position_ + read_size;
 

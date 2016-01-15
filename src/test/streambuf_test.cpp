@@ -24,7 +24,8 @@ using namespace boost::unit_test;
 
 typedef void (*test_func_type)(void);
 typedef uint8_t char_type;
-typedef snode::streams::producer_consumer_buffer<char_type> prod_cons_buf_type;
+//typedef snode::streams::producer_consumer_buffer<char_type> prod_cons_buf_type;
+typedef snode::streams::async_streambuf<char_type, snode::streams::producer_consumer_buffer<char_type>> prod_cons_buf_type;
 typedef std::shared_ptr<prod_cons_buf_type> prod_cons_buf_ptr;
 typedef std::shared_ptr<uint8_t> buf_ptr;
 
@@ -52,7 +53,7 @@ int async_streambuf_test_base(test_func_type func)
 
 prod_cons_buf_ptr create_producer_consumer_buffer_with_data(const std::vector<uint8_t> & s)
 {
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = std::make_shared<snode::streams::producer_consumer_buffer<char_type>>();
     auto target = buf->alloc(s.size());
     BOOST_ASSERT(target != nullptr);
     std::copy(s.begin(), s.end(), target);
@@ -424,6 +425,7 @@ void test_streambuf_seek_write(StreamBufferTypePtr wbuf)
     finish_test();
 }
 
+
 void test_producer_consumer_sgetc()
 {
     uint8_t data[] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
@@ -442,19 +444,19 @@ void test_producer_consumer_getn()
 
 void test_producer_consumer_putn()
 {
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = std::make_shared<snode::streams::producer_consumer_buffer<char_type>>();
     test_streambuf_putn(buf);
 }
 
 void test_producer_consumer_putn_getn()
 {
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = std::make_shared<snode::streams::producer_consumer_buffer<char_type>>();
     test_streambuf_putn_getn(buf);
 }
 
 void test_producer_consumer_putc()
 {
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = std::make_shared<snode::streams::producer_consumer_buffer<char_type>>();
     test_streambuf_putc(buf);
 }
 
@@ -484,7 +486,7 @@ void test_producer_consumer_nextc()
 
 void test_producer_consumer_alloc_commt()
 {
-    prod_cons_buf_ptr buf = std::make_shared<prod_cons_buf_type>(512);
+    prod_cons_buf_ptr buf = std::make_shared<snode::streams::producer_consumer_buffer<char_type>>();
     test_streambuf_alloc_commit(buf);
 }
 
@@ -503,6 +505,7 @@ init_unit_test_suite( int argc, char* argv[] )
     }
 
     // boost::unit_test::unit_test_log_t::instance().set_threshold_level( boost::unit_test::log_successful_tests );
+
 
     auto test_case_producer_consumer_putn = std::bind(&async_streambuf_test_base, test_producer_consumer_putn);
     auto test_case_producer_consumer_putc = std::bind(&async_streambuf_test_base, test_producer_consumer_putc);

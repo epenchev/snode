@@ -35,7 +35,7 @@ namespace streams
         typedef typename producer_consumer_buffer::off_type off_type;
 
         /// Constructor
-        producer_consumer_buffer(size_t alloc_size) : base_stream_type(std::ios_base::out | std::ios_base::in),
+        producer_consumer_buffer(size_t alloc_size = 512) : base_stream_type(std::ios_base::out | std::ios_base::in),
             alloc_size_(alloc_size),
             allocblock_(nullptr),
             total_(0), total_read_(0), total_written_(0),
@@ -50,20 +50,20 @@ namespace streams
         }
 
         /// internal implementation of can_seek() from async_streambuf
-        bool can_seek_impl() const { return false; }
+        bool can_seek() const { return false; }
 
         /// internal implementation of has_size() from async_streambuf
-        bool has_size_impl() const { return false; }
+        bool has_size() const { return false; }
 
         /// internal implementation of buffer_size() from async_streambuf
-        size_t buffer_size_impl(std::ios_base::openmode = std::ios_base::in) const
+        size_t buffer_size(std::ios_base::openmode = std::ios_base::in) const
         { return 0; }
 
         /// internal implementation of in_avail() from async_streambuf
-        size_t in_avail_impl() const { return total_; }
+        size_t in_avail() const { return total_; }
 
         /// internal implementation of getpos() from async_streambuf
-        pos_type getpos_impl(std::ios_base::openmode mode) const
+        pos_type getpos(std::ios_base::openmode mode) const
         {
             if ( ((mode & std::ios_base::in) && !this->can_read()) ||
                  ((mode & std::ios_base::out) && !this->can_write()))
@@ -81,14 +81,14 @@ namespace streams
 
         /// Seeking is not supported
         /// internal implementation of seekpos() from async_streambuf
-        pos_type seekpos_impl(pos_type, std::ios_base::openmode) { return (pos_type)traits::eof(); }
+        pos_type seekpos(pos_type, std::ios_base::openmode) { return (pos_type)traits::eof(); }
 
         /// Seeking is not supported
         /// internal implementation of seekoff() from async_streambuf
-        pos_type seekoff_impl(off_type , std::ios_base::seekdir , std::ios_base::openmode ) { return (pos_type)traits::eof(); }
+        pos_type seekoff(off_type , std::ios_base::seekdir , std::ios_base::openmode ) { return (pos_type)traits::eof(); }
 
         /// internal implementation of alloc() from async_streambuf
-        CharType* alloc_impl(size_t count)
+        CharType* alloc(size_t count)
         {
             if (!this->can_write())
             {
@@ -106,7 +106,7 @@ namespace streams
 
         /// internal implementation of commit() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        void commit_impl(size_t count)
+        void commit(size_t count)
         {
             // The count does not reflect the actual size of the block.
             // Since we do not allow any more writes to this block it would suffice.
@@ -122,7 +122,7 @@ namespace streams
 
         /// internal implementation of acquire() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        bool acquire_impl(CharType*& ptr, size_t& count)
+        bool acquire(CharType*& ptr, size_t& count)
         {
             count = 0;
             ptr = nullptr;
@@ -149,7 +149,7 @@ namespace streams
 
         /// internal implementation of release() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        void release_impl(CharType* ptr, size_t count)
+        void release(CharType* ptr, size_t count)
         {
             if (ptr == nullptr)
                 return;
@@ -164,7 +164,7 @@ namespace streams
 
         /// internal implementation of sync() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        void sync_impl()
+        void sync()
         {
             synced_ = this->in_avail();
             fulfill_outstanding();
@@ -172,7 +172,7 @@ namespace streams
 
         /// internal implementation of putc() from async_streambuf
         template<typename WriteHandler>
-        void putc_impl(CharType ch, WriteHandler handler)
+        void putc(CharType ch, WriteHandler handler)
         {
             int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
             async_task::connect(handler, res);
@@ -180,7 +180,7 @@ namespace streams
 
         /// internal implementation of putn() from async_streambuf
         template<typename WriteHandler>
-        void putn_impl(const CharType* ptr, size_t count, WriteHandler handler)
+        void putn(const CharType* ptr, size_t count, WriteHandler handler)
         {
             size_t res = this->write(ptr, count);
             async_task::connect(handler, res);
@@ -188,7 +188,7 @@ namespace streams
 
         /// internal implementation of putn_nocopy() from async_streambuf
         template<typename WriteHandler>
-        void putn_nocopy_impl(const CharType* ptr, size_t count, WriteHandler handler)
+        void putn_nocopy(const CharType* ptr, size_t count, WriteHandler handler)
         {
             typedef async_streambuf_op<CharType, WriteHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, WriteHandler>(handler);
@@ -203,7 +203,7 @@ namespace streams
 
         /// internal implementation of getn() from async_streambuf
         template<typename ReadHandler>
-        void getn_impl(CharType* ptr, size_t count, ReadHandler handler)
+        void getn(CharType* ptr, size_t count, ReadHandler handler)
         {
             typedef async_streambuf_op<CharType, ReadHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
@@ -211,21 +211,21 @@ namespace streams
         }
 
         /// internal implementation of sgetn() from async_streambuf
-        size_t sgetn_impl(CharType* ptr, size_t count)
+        size_t sgetn(CharType* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count) : (size_t)traits::requires_async();
         }
 
         /// internal implementation of scopy() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        size_t scopy_impl(CharType* ptr, size_t count)
+        size_t scopy(CharType* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count, false) : (size_t)traits::requires_async();
         }
 
         /// internal implementation of bumpc() from async_streambuf
         template<typename ReadHandler>
-        void bumpc_impl(ReadHandler handler)
+        void bumpc(ReadHandler handler)
         {
             typedef async_streambuf_op<CharType, ReadHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
@@ -234,14 +234,14 @@ namespace streams
 
         /// internal implementation of sbumpc() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        int_type sbumpc_impl()
+        int_type sbumpc()
         {
             return can_satisfy(1) ? this->read_byte(true) : traits::requires_async();
         }
 
         /// internal implementation of getc() from async_streambuf
         template<typename ReadHandler>
-        void getc_impl(ReadHandler handler)
+        void getc(ReadHandler handler)
         {
             typedef async_streambuf_op<CharType, ReadHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
@@ -250,14 +250,14 @@ namespace streams
 
         /// internal implementation of sgetc() from async_streambuf
         /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
-        int_type sgetc_impl()
+        int_type sgetc()
         {
             return can_satisfy(1) ? this->read_byte(false) : traits::requires_async();
         }
 
         /// internal implementation of nextc() from async_streambuf
         template<typename ReadHandler>
-        void nextc_impl(ReadHandler handler)
+        void nextc(ReadHandler handler)
         {
             typedef async_streambuf_op<CharType, ReadHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
@@ -266,22 +266,23 @@ namespace streams
 
         /// internal implementation of ungetc() from async_streambuf
         template<typename ReadHandler>
-        void ungetc_impl(ReadHandler handler)
+        void ungetc(ReadHandler handler)
         {
             async_task::connect(handler, static_cast<int_type>(traits::eof()));
         }
 
-        void close_read_impl()
+        // Just for specify the implementation requirements
+        void close_read()
         {
-            this->close_read();
+            // noop
         }
 
-        void close_write_impl()
+        void close_write()
         {
             // First indicate that there could be no more writes.
             // Fulfill outstanding relies on that to flush all the
             // read requests.
-            this->close_write();
+            this->stream_can_write_ = false;
 
             // This runs on the thread that called close.
             this->fulfill_outstanding();

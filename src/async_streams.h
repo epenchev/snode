@@ -218,13 +218,13 @@ namespace streams
         /// can_seek() is used to determine whether a stream buffer supports seeking.
         bool can_seek() const
         {
-            return get_impl()->can_seek_impl();
+            return get_impl()->can_seek();
         }
 
         /// has_size() is used to determine whether a stream buffer supports size().
         bool has_size() const
         {
-            return get_impl()->has_size_impl();
+            return get_impl()->has_size();
         }
 
         /// can_read() is used to determine whether a stream buffer will support read operations (get).
@@ -248,20 +248,20 @@ namespace streams
         /// Gets the stream buffer size for in or out direction, if one has been set.
         size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
         {
-           return get_impl()->buffer_size_impl(direction);
+           return get_impl()->buffer_size(direction);
         }
 
         /// Sets the stream buffer implementation to buffer or not buffer for the given direction (in or out).
         void set_buffer_size(size_t size, std::ios_base::openmode direction = std::ios_base::in)
         {
-            get_impl()->set_buffer_size_impl(size, direction);
+            get_impl()->set_buffer_size(size, direction);
         }
 
         /// For any input stream, returns the number of characters that are immediately available to be consumed without blocking
         /// May be used in conjunction with sbumpc() method to read data without using async tasks.
         size_t in_avail() const
         {
-            return get_impl()->in_avail_impl();
+            return get_impl()->in_avail();
         }
 
         /// Gets the current read or write position in the stream for the given (direction).
@@ -270,13 +270,13 @@ namespace streams
         /// For such streams, the direction parameter defines whether to move the read or the write cursor.</remarks>
         pos_type getpos(std::ios_base::openmode direction) const
         {
-            return get_impl()->getpos_impl();
+            return get_impl()->getpos();
         }
 
         /// Gets the size of the stream, if known. Calls to has_size() will determine whether the result of size can be relied on.
         size_t size() const
         {
-            return get_impl()->size_impl();
+            return get_impl()->size();
         }
 
         /// Seeks to the given position (pos is offset from beginning of the stream) for the given (direction).
@@ -284,7 +284,7 @@ namespace streams
         /// Some streams may have separate write and read cursors. For such streams the direction parameter defines whether to move the read or the write cursor.
         pos_type seekpos(pos_type pos, std::ios_base::openmode direction)
         {
-            return get_impl()->seekpos_impl(pos, direction);
+            return get_impl()->seekpos(pos, direction);
         }
 
         /// Seeks to a position given by a relative (offset) with starting point (way beginning, end, current) for the seek and with I/O direction (pos in/out).
@@ -293,17 +293,23 @@ namespace streams
         /// the mode parameter defines whether to move the read or the write cursor.
         pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
         {
-            return get_impl()->seekof_impl(offset, way, mode);
+            return get_impl()->seekof(offset, way, mode);
         }
 
         /// Closes the stream buffer for the I/O mode (in or out), preventing further read or write operations.
         void close(std::ios_base::openmode mode = std::ios_base::in | std::ios_base::out)
         {
             if ((mode & std::ios_base::in) && can_read())
-                get_impl()->close_read_impl();
+            {
+                close_read();
+                get_impl()->close_read();
+            }
 
             if ((mode & std::ios_base::out) && can_write())
-                get_impl()->close_write_impl();
+            {
+                close_write();
+                get_impl()->close_write();
+            }
         }
 
         /// is_eof() is used to determine whether a read head has reached the end of the buffer.
@@ -322,7 +328,7 @@ namespace streams
             if (!can_write())
                 async_task::connect(handler, traits::eof());
             else
-                get_impl()->putc_impl(ch, handler);
+                get_impl()->putc(ch, handler);
         }
 
         /// Writes a number (count) of characters to the stream buffer from source memory (ptr),
@@ -338,7 +344,7 @@ namespace streams
                 if (!can_write())
                     async_task::connect(handler, 0);
                 else
-                    get_impl()->putn_impl(ptr, count, handler);
+                    get_impl()->putn(ptr, count, handler);
             }
         }
 
@@ -369,7 +375,7 @@ namespace streams
             if (!can_read())
             	async_task::connect(handler, traits::eof());
             else
-            	get_impl()->bumpc_impl(handler);
+            	get_impl()->bumpc(handler);
         }
 
         /// Reads a single character from the stream and advances the read position.
@@ -379,7 +385,7 @@ namespace streams
         {
             if (!can_read())
                 return traits::eof();
-            return check_sync_read_eof(get_impl()->sbumpc_impl());
+            return check_sync_read_eof(get_impl()->sbumpc());
         }
 
         /// Reads a single character from the stream without advancing the read position.
@@ -392,7 +398,7 @@ namespace streams
             if (!can_read())
                 async_task::connect(handler, traits::eof());
             else
-                get_impl()->getc_impl(handler);
+                get_impl()->getc(handler);
         }
 
         /// Reads a single character from the stream without advancing the read position.
@@ -402,7 +408,7 @@ namespace streams
         {
             if (!can_read())
                 return traits::eof();
-            return check_sync_read_eof(get_impl()->sgetc_impl());
+            return check_sync_read_eof(get_impl()->sgetc());
         }
 
         /// Advances the read position, then returns the next character without advancing again.
@@ -415,7 +421,7 @@ namespace streams
             if (!can_read())
                 throw std::runtime_error(utils::s_out_streambuf_msg);
 
-            get_impl()->nextc_impl(handler);
+            get_impl()->nextc(handler);
         }
 
         /// Retreats the read position, then returns the current character without advancing.
@@ -428,7 +434,7 @@ namespace streams
             if (!can_read())
                 throw std::runtime_error(utils::s_out_streambuf_msg);
 
-            get_impl()->ungetc_impl(handler);
+            get_impl()->ungetc(handler);
         }
 
         /// Reads up to a given number (count) of characters from the stream from source memory (ptr).
@@ -443,7 +449,7 @@ namespace streams
                 if (!can_read())
                     async_task::connect(handler, 0);
                 else
-                    get_impl()->getn_impl(ptr, count, handler);
+                    get_impl()->getn(ptr, count, handler);
             }
         }
 
@@ -454,7 +460,7 @@ namespace streams
         {
             if (!can_read())
                 return 0;
-            return get_impl()->scopy_impl(ptr, count);
+            return get_impl()->scopy(ptr, count);
         }
 
         /// For output streams, flush any internally buffered data to the underlying medium.
@@ -462,7 +468,7 @@ namespace streams
         {
             if (!can_write())
                 throw std::runtime_error(utils::s_out_streambuf_msg);
-            get_impl()->sync_impl();
+            get_impl()->sync();
         }
 
         //
@@ -484,7 +490,7 @@ namespace streams
             if (alloced_)
                 throw std::logic_error("The buffer is already allocated, this maybe caused by overlap of stream read or write");
 
-            CharType* alloc_result = get_impl()->alloc_impl(count);
+            CharType* alloc_result = get_impl()->alloc(count);
 
             if (alloc_result)
                 alloced_ = true;
@@ -500,7 +506,7 @@ namespace streams
             if (!alloced_)
                 throw std::logic_error("The buffer needs to allocate first");
 
-            get_impl()->commit_impl(count);
+            get_impl()->commit(count);
             alloced_ = false;
         }
 
@@ -516,7 +522,7 @@ namespace streams
         /// a subsequent read will not succeed.
         bool acquire(CharType*& ptr, size_t& count)
         {
-            return get_impl()->acquire_impl(ptr, count);
+            return get_impl()->acquire(ptr, count);
         }
 
         /// Releases a block of data acquired using ::acquire() method. This frees the stream buffer to de-allocate the
@@ -525,7 +531,7 @@ namespace streams
         /// (count) The number of characters that were read.
         void release(CharType* ptr, size_t count)
         {
-            get_impl()->release_impl(ptr, count);
+            get_impl()->release(ptr, count);
         }
     };
 
