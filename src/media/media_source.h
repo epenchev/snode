@@ -1,6 +1,6 @@
 //
 // media_source.h
-// Copyright (C) 2015  Emil Penchev, Bulgaria
+// Copyright (C) 2016  Emil Penchev, Bulgaria
 
 
 #ifndef MEDIA_SOURCE_H_
@@ -22,6 +22,7 @@ public:
     typedef typename traits::int_type int_type;
     typedef typename traits::pos_type pos_type;
     typedef typename traits::off_type off_type;
+    typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type>> streambuf_type;
 
     /// General interface for reading
     size_t read(CharType* ptr, size_t count, off_type offset)
@@ -35,11 +36,12 @@ public:
 protected:
 
     typedef size_t (*read_func)(media_source<CharType>* base, CharType* ptr, size_t count, off_type offset);
-    media_source(read_func func) : func_(func)
+    media_source(read_func func) : func_(func), livebuf_(nullptr)
     {}
 
     read_func func_;
-    //snode::readbuffer<CharType>* buf_;
+    //streams::media_sourcebuf<CharType>* buf_;
+    streams::async_streambuf<CharType, streams::producer_consumer_buffer<CharType>>* livebuf_;
 
 };
 

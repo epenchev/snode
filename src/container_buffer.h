@@ -18,7 +18,7 @@ namespace snode
 namespace streams
 {
 
-/// The basic_container_buffer class serves as a memory-based steam buffer that supports writing or reading
+/// The basic_container_buffer class serves as a memory-based stream buffer that supports writing or reading
 /// sequences of characters.
 /// A class to allow users to create input and out streams based on STL collections.
 /// The sole purpose of this class to avoid users from having to know anything about stream buffers.
