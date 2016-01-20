@@ -17,25 +17,52 @@ namespace streams
 /// sequences of characters from a arbitrary static source object that complies with SourceImpl interface.
 /// SourceImpl can be anything not depending from the medium (file, memory, network ..)
 template<typename SourceImpl>
-class sourcebuf : public async_streambuf<SourceImpl::char_type, sourcebuf<SourceImpl>>
+class sourcebuf : public async_streambuf<typename SourceImpl::char_type, sourcebuf<SourceImpl>>
 {
 private:
     SourceImpl& source_;
+    typedef typename SourceImpl::char_type char_type;
+    typedef async_streambuf<char_type, sourcebuf<SourceImpl>> base_stream_type;
+    typedef typename sourcebuf::traits traits;
+    typedef typename sourcebuf::pos_type pos_type;
+    typedef typename sourcebuf::int_type int_type;
+    typedef typename sourcebuf::off_type off_type;
 
     // internal buffered data from source
     struct buffer_info
     {
-        std::vector<char_type> data_; // actual buffer storage to hold the data
-        size_t rdpos_;                // Buffer read pointer as a offset from the source // start of the buffer
-        size_t off_;                  // Source position that the start of the buffer represents.
-        size_t fill_;                 // Amount of file data actually in the buffer
+        buffer_info(size_t buffer_size) :
+            rdpos_(0),
+            bufoff_(0),
+            buffill_(0),
+            atend_(false),
+            buffer_(buffer_size)
+        {}
+
+        size_t rdpos_;                  // Read pointer as an offset from the start of the source.
+        size_t bufoff_;                 // Source position that the start of the buffer represents.
+        size_t buffill_;                // Amount of file data actually in the buffer (how much buffer is filled)
+        bool   atend_;                  // End indicator flag
+        std::vector<char_type> buffer_;
     };
 
-    buffer_info buf_;
-public:
-    typedef async_streambuf<SourceImpl::char_type, sourcebuf<SourceImpl>> base_stream_type;
+    buffer_info info_;
 
-    sourcebuf(SourceImpl& source) : base_stream_type(std::ios_base::in), source_(source), current_position_(0)
+
+    /// Adjust the internal buffers and pointers when the application seeks to a new read location in the stream.
+    size_t seekrdpos(size_t pos)
+    {
+        if ( pos < info_.bufoff_ || pos > (info_.bufoff_ + info_.buffill_) )
+        {
+            info_.bufoff_ = info_.buffill_ = 0;
+        }
+
+        info_.rdpos_ = pos;
+        return info_.rdpos_;
+    }
+
+public:
+    sourcebuf(SourceImpl& source) : base_stream_type(std::ios_base::in), source_(source), info_(512)
     {}
 
     ~sourcebuf()
@@ -50,9 +77,12 @@ public:
     bool has_size() const { return this->is_open(); }
 
     /// implementation of buffer_size() to be used in async_streambuf
-    size_t buffer_size(std::ios_base::openmode = std::ios_base::in) const
+    size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
     {
-        return buf_.data_.size();
+        if ( std::ios_base::in == direction )
+            return info_.buffer_.size();
+        else
+            return 0;
     }
 
     /// implementation of in_avail() to be used in async_streambuf
@@ -60,36 +90,23 @@ public:
     {
         if (!this->is_open()) return 0;
 
-        if (buf_.data_.empty() || 0 == buf_.fill_) return 0;
+        if (0 == info_.buffill_) return 0;
+        if (info_.bufoff_ > info_.rdpos_ || (info_.bufoff_ + info_.buffill_) < info_.rdpos_) return 0;
 
-
-        //if (buf_.off_ > buf_.rdpos_ || (m_info->m_bufoff+m_info->m_buffill) < m_info->m_rdpos ) return 0;
-
-        /*
-        msl::safeint3::SafeInt<size_t> rdpos(m_info->m_rdpos);
-        msl::safeint3::SafeInt<size_t> buffill(m_info->m_buffill);
-        msl::safeint3::SafeInt<size_t> bufpos = rdpos - m_info->m_bufoff;
+        size_t rdpos(info_.rdpos_);
+        size_t buffill(info_.buffill_);
+        size_t bufpos = rdpos - info_.bufoff_;
 
         return buffill - bufpos;
-        */
-
-        // See the comment in seek around the restriction that we do not allow read head to
-        // seek beyond the current write_end.
-        assert(current_position_ <= source_.size());
-
-        size_t readhead(current_position_);
-        size_t write_end(data_.size());
-        return (size_t)(write_end - readhead);
-        return 0;
     }
 
     /// Sets the stream buffer implementation to buffer or not buffer.
     /// implementation of set_buffer_size() to be used in async_streambuf
-    void set_buffer_size(size_t size, std::ios_base::openmode = std::ios_base::in)
+    void set_buffer_size(size_t size, std::ios_base::openmode direction = std::ios_base::in)
     {
-        if (std::ios_base::in != openmode)
+        if (std::ios_base::in != direction)
             return;
-        buf_.data_.reserve(size);
+        info_.buffer_.reserve(size);
     }
 
     /// implementation of sync() to be used in async_streambuf
@@ -116,35 +133,20 @@ public:
     void commit(size_t count) { return; }
 
     /// implementation of acquire() to be used in async_streambuf
-    bool acquire(CharType*& ptr, size_t& count)
+    bool acquire(char_type*& ptr, size_t& count)
     {
         ptr = nullptr;
         count = 0;
-        if (!this->can_read())
-            return false;
-
-        count = in_avail();
-        if (count > 0)
-        {
-            ptr = (char_type*)&data_[current_position_];
-            return true;
-        }
-        else
-        {
-            // Can only be open for read OR write, not both. If there is no data then
-            // we have reached the end of the stream so indicate such with true.
-            return false;
-        }
+        return false;
     }
 
-    /// internal implementation of release() from async_streambuf
+    /// implementation of release() to be used async_streambuf
     void release(char_type* ptr, size_t count)
     {
-        if (nullptr != ptr)
-            update_current_position(current_position_ + count);
+        (void)(count);
     }
 
-    /// internal implementation of getn() from async_streambuf
+    /// implementation of getn() to be used in async_streambuf
     template<typename ReadHandler>
     void getn(char_type* ptr, size_t count, ReadHandler handler)
     {
@@ -152,19 +154,19 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sgetn() from async_streambuf
+    /// implementation of sgetn() to be used in async_streambuf
     size_t sgetn(char_type* ptr, size_t count)
     {
         return this->read(ptr, count);
     }
 
-    /// internal implementation of scopy() from async_streambuf
+    /// implementation of scopy() to be used in async_streambuf
     size_t scopy(char_type* ptr, size_t count)
     {
         return this->read(ptr, count, false);
     }
 
-    /// internal implementation of bumpc() from async_streambuf
+    /// implementation of bumpc() to be used in async_streambuf
     template<typename ReadHandler>
     void bumpc(ReadHandler handler)
     {
@@ -172,13 +174,13 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sbumpc() from async_streambuf
+    /// implementation of sbumpc() to be used in async_streambuf
     int_type sbumpc()
     {
         return this->read_byte(true);
     }
 
-    /// internal implementation of getc() from async_streambuf
+    /// implementation of getc() to be used in async_streambuf
     template<typename ReadHandler>
     void getc(ReadHandler handler)
     {
@@ -186,13 +188,13 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sgetc() from async_streambuf
+    /// implementation of sgetc() to be used in async_streambuf
     int_type sgetc()
     {
         return this->read_byte(false);
     }
 
-    /// internal implementation of nextc() from async_streambuf
+    /// implementation of nextc() to be used in async_streambuf
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
@@ -200,7 +202,7 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of ungetc() from async_streambuf
+    /// implementation of ungetc() to be used in async_streambuf
     template<typename ReadHandler>
     void ungetc(ReadHandler handler)
     {
@@ -212,14 +214,14 @@ public:
         */
     }
 
-    /// internal implementation of getpos() from async_streambuf
+    /// implementation of getpos() to be used in async_streambuf
     pos_type getpos(std::ios_base::openmode mode = std::ios_base::in) const
     {
-        if ((mode & std::ios_base::in) || !this->can_read())
+        if ((std::ios_base::in != mode) || !this->can_read())
         {
             return static_cast<pos_type>(traits::eof());
         }
-        return static_cast<pos_type>(current_position_);
+        return this->seekoff(0, std::ios_base::cur, mode);
     }
 
     /// Seeks to the given position implementation.
@@ -231,7 +233,7 @@ public:
         // Technically, there is no end for the stream buffer as new writes would just expand the buffer.
         // For now, we assume that the current write_end is the end of the buffer. We use this artificial
         // end to restrict the read head from seeking beyond what is available.
-
+#if 0
         pos_type end(data_.size());
 
         if (position >= beg)
@@ -265,13 +267,14 @@ public:
             }
             */
         }
-
+#endif
         return static_cast<pos_type>(traits::eof());
     }
 
     /// Seeks to a position given by a relative offset implementation.
     pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
     {
+#if 0
         pos_type beg = 0;
         pos_type cur = static_cast<pos_type>(current_position_);
         pos_type end = static_cast<pos_type>(data_.size());
@@ -290,6 +293,8 @@ public:
         default:
             return static_cast<pos_type>(traits::eof());
         }
+#endif
+        return 0;
     }
 
     void close_read()

@@ -270,7 +270,7 @@ namespace streams
         /// For such streams, the direction parameter defines whether to move the read or the write cursor.</remarks>
         pos_type getpos(std::ios_base::openmode direction) const
         {
-            return get_impl()->getpos();
+            return get_impl()->getpos(direction);
         }
 
         /// Gets the size of the stream, if known. Calls to has_size() will determine whether the result of size can be relied on.

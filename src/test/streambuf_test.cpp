@@ -9,6 +9,7 @@
 #include "async_task.h"
 #include "async_streams.h"
 #include "producer_consumer_buf.h"
+#include "sourcebuf.h"
 
 #define BOOST_TEST_LOG_LEVEL all
 #define BOOST_TEST_BUILD_INFO yes
@@ -28,6 +29,7 @@ typedef uint8_t char_type;
 typedef snode::streams::async_streambuf<char_type, snode::streams::producer_consumer_buffer<char_type>> prod_cons_buf_type;
 typedef std::shared_ptr<prod_cons_buf_type> prod_cons_buf_ptr;
 typedef std::shared_ptr<uint8_t> buf_ptr;
+
 
 static bool s_block = true;
 void inline wait_test()
