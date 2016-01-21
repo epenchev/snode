@@ -505,7 +505,6 @@ namespace streams
 
         /// Reads a byte from the stream and returns it as int_type.
         /// Note: This routine shall only be called if can_satisfy() returned true.
-        /// This should be called with the lock held.
         int_type read_byte(bool advance = true)
         {
             CharType value;
@@ -516,7 +515,6 @@ namespace streams
         /// Reads up to (count) characters into (ptr) and returns the count of characters copied.
         /// The return value (actual characters copied) could be <= count.
         /// Note: This routine shall only be called if can_satisfy() returned true.
-        /// This should be called with the lock held.
         size_t read(CharType* ptr, size_t count, bool advance = true)
         {
             assert(can_satisfy(count));

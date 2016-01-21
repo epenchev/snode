@@ -48,7 +48,6 @@ private:
 
     buffer_info info_;
 
-
     /// Adjust the internal buffers and pointers when the application seeks to a new read location in the stream.
     size_t seekrdpos(size_t pos)
     {
@@ -59,6 +58,30 @@ private:
 
         info_.rdpos_ = pos;
         return info_.rdpos_;
+    }
+
+    /// Reads a byte from the stream and returns it as int_type.
+    /// Note: This routine shall only be called if can_satisfy() returned true.
+    int_type read_byte(bool advance = true)
+    {
+        char_type value;
+        auto read_size = this->read(&value, 1, advance);
+        return read_size == 1 ? static_cast<int_type>(value) : traits::eof();
+    }
+
+    /// Reads up to (count) characters into (ptr) and returns the count of characters copied.
+    /// The return value (actual characters copied) could be <= count.
+    /// Note: This routine shall only be called if can_satisfy() returned true.
+    size_t read(char_type* ptr, size_t count, bool advance = true)
+    {
+        assert(can_satisfy(count));
+        size_t totalr = 0;
+
+        if (advance)
+        {
+            update_read_head(totalr);
+        }
+        return totalr;
     }
 
 public:
@@ -300,12 +323,11 @@ public:
     void close_read()
     {
         this->stream_can_read_ = false;
+        source_.close();
     }
 
     void close_write()
-    {
-        // noop
-    }
+    {}
 };
 
 }}
