@@ -7,6 +7,7 @@
 #define MEDIA_SOURCE_H_
 
 #include <string>
+#include <memory>
 
 namespace snode
 {
@@ -25,6 +26,7 @@ public:
     typedef streams::async_istream<char_type, streams::sourcebuf<media_source> > stream_type;
     typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > live_streambuf_type;
     typedef streams::async_istream<char_type, streams::producer_consumer_buffer<char_type> > live_stream_type;
+    typedef std::shared_ptr<streambuf_type> streambuf_type_ptr;
 
     /// Reads up to (count) characters into (ptr) and returns the count of characters copied.
     /// The return value (actual characters copied) could be <= count.
@@ -40,26 +42,31 @@ public:
         closefunc_(this);
     }
 
-    /// async_stream to access the source data.
-    /// If source represents live stream data returned object is NULL,
-    /// so consider using live_istream() instead.
-    stream_type* stream()
+    /// Object of type async_istream to access the source data.
+    /// For live data source live_istream() must be used instead.
+    stream_type& stream()
     {
-        if (streambuf_.can_read())
-            return &stream_;
-        else
-            return nullptr;
+        if (!stream_.is_valid())
+        {
+            if (!streambuf_)
+                streambuf_ = std::make_shared<streams::sourcebuf<media_source> >(this);
+
+            if (streambuf_->can_read())
+                stream_ = streambuf_->create_istream();
+        }
+        return stream_;
     }
 
-    /// Get not seek-able async_stream if source represents live data stream.
-    /// If source is not live data stream the returned stream object is NULL,
-    /// so consider using stream() instead.
-    live_stream_type* live_stream()
+    /// Object of type async_istream to access live data stream.
+    /// For static data source stream() must be used instead.
+    live_stream_type& live_stream()
     {
-        if (live_streambuf_.can_read())
-            return &live_stream_;
-        else
-            return nullptr;
+        if (!live_stream_.is_valid())
+        {
+            if (live_streambuf().can_read())
+                live_stream_ = live_streambuf().create_istream();
+        }
+        return live_stream_;
     }
 
     /// Get media_source specific implementation
@@ -75,15 +82,19 @@ public:
 protected:
 
     typedef void (*close_func)(media_source* base);
-    typedef live_streambuf_type (*streambuf_func)(media_source* base);
+    typedef live_streambuf_type& (*streambuf_func)(media_source* base);
     typedef size_t (*read_func)(media_source* base, char_type* ptr, size_t count, off_type offset);
 
     media_source(close_func closefunc, read_func readfunc, streambuf_func streambuffunc)
         : closefunc_(closefunc),
           readfunc_(readfunc),
-          streambuf_func_(streambuffunc)
+          streambuf_func_(streambuffunc),
+          streambuf_(std::nullptr_t)
+    {}
+
+    live_streambuf_type& live_streambuf()
     {
-        // TODO
+        return streambuf_func_(this);
     }
 
     /// function bindings with implementation
@@ -91,15 +102,14 @@ protected:
     read_func readfunc_;
     streambuf_func streambuf_func_;
 
-    /// streams and buffers
-    streambuf_type streambuf_;
-    live_streambuf_type live_streambuf_;
+    // static data
+    streambuf_type_ptr streambuf_;
+    // streams
     stream_type stream_;
     live_stream_type live_stream_;
-
 };
 
-/// A Curiously recurring template pattern for creating custom media_source objects.
+/// Template based implementation bridge for custom media_soure implementations.
 /// Impl template is the actual source implementation.
 /// A custom implementation must implement read(), close() and streambuf() method and an factory class that complies with reg_factory.
 template<typename Impl>
@@ -107,25 +117,30 @@ class media_source_impl : public media_source
 {
 public:
 
+    /// Bridge for media_source::read()
     static void read(media_source* base, char_type* ptr, size_t count, off_type offset)
     {
         media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
         source->impl_.read(ptr, count, offset);
     }
 
+    /// Bridge for media_source::close()
     static void close(media_source* base)
     {
         media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
         source->impl_.close();
     }
 
-    static media_source::live_streambuf_type streambuf(media_source* base)
+    /// Bridge for media_source::streambuf()
+    static media_source::live_streambuf_type& streambuf(media_source* base)
     {
         media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
         return source->impl_.streambuf();
     }
 
-    media_source_impl(Impl& impl) : media_source(&media_source_impl::close, &media_source_impl::read, &media_source_impl::streambuf), impl_(impl)
+    media_source_impl(Impl& impl) : media_source(&media_source_impl::close,
+                                                 &media_source_impl::read,
+                                                 &media_source_impl::streambuf), impl_(impl)
     {}
 
     /// return the actual source implementation

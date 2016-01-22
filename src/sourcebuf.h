@@ -48,6 +48,33 @@ private:
 
     buffer_info info_;
 
+
+    size_t fill_buffer(/*filestream_callback *callback,*/ size_t count)
+    {
+        auto charSize = sizeof(char_type);
+        size_t byteCount = count * charSize;
+
+        auto totalr = source_.read(info_.buffer_.data(), byteCount);
+        info_.atend_ = (count > totalr);
+        info_.rdpos_ += totalr;
+
+        // Still TODO
+        // First, we need to understand how far into the buffer we have already read
+        // and how much remains.
+        size_t bufpos = fInfo->m_rdpos - fInfo->m_bufoff;
+        size_t bufrem = fInfo->m_buffill - bufpos;
+
+        if ( bufrem < count )
+        {
+
+        }
+        else
+        {
+            return byteCount;
+        }
+    }
+
+
     /// Adjust the internal buffers and pointers when the application seeks to a new read location in the stream.
     size_t seekrdpos(size_t pos)
     {
@@ -64,6 +91,10 @@ private:
     /// Note: This routine shall only be called if can_satisfy() returned true.
     int_type read_byte(bool advance = true)
     {
+        if (in_avail() > 0)
+        {
+
+        }
         char_type value;
         auto read_size = this->read(&value, 1, advance);
         return read_size == 1 ? static_cast<int_type>(value) : traits::eof();
@@ -74,12 +105,27 @@ private:
     /// Note: This routine shall only be called if can_satisfy() returned true.
     size_t read(char_type* ptr, size_t count, bool advance = true)
     {
-        assert(can_satisfy(count));
         size_t totalr = 0;
+        auto bufoff = info_.rdpos_ - info_.bufoff_;
 
-        if (advance)
+        if ( in_avail() >= count )
         {
-            update_read_head(totalr);
+            std::memcpy((void *)ptr, info_.buffer_.data() + (bufoff * sizeof(char_type)), count * sizeof(char_type));
+            totalr = count;
+            info_.rdpos_ += count;
+        }
+        else
+        {
+            // reads only what is available
+            auto avail = in_avail();
+            auto fillcount = count - avail;
+            if (avail)
+            {
+                std::memcpy((void *)ptr, info_.buffer_.data() + (bufoff * sizeof(char_type)), avail * sizeof(char_type));
+                totalr = avail;
+                info_.rdpos_ += avail;
+            }
+            fill_buffer(fillcount);
         }
         return totalr;
     }
