@@ -222,7 +222,6 @@ public:
     /// internal implementation of sgetc() from async_streambuf
     int_type sgetc()
     {
-        // add lock ?
         return this->read_byte(false);
     }
 
@@ -230,6 +229,7 @@ public:
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
+        // TODO move read pointer in advance
         int_type res = this->read_byte(true);
         async_task::connect(handler, res);
     }

@@ -46,32 +46,54 @@ private:
         std::vector<char_type> buffer_;
     };
 
+    /// container used for async operations
+    template<typename Handler>
+    class read_op
+    {
+    public:
+        read_op(sourcebuf<SourceImpl>& buf, Handler h) : handler_(h), buf_(buf)
+        {}
+
+        void read(char_type* ptr, size_t count, bool advance = true)
+        {
+            auto countr = buf_.read(ptr, count);
+            handler_(countr);
+        }
+
+        void read_byte(bool advance = true)
+        {
+            auto chr = buf_.read_byte();
+            handler_(chr);
+        }
+    private:
+        Handler handler_;
+        sourcebuf<SourceImpl>& buf_;
+    };
+
+    friend class read_op;
     buffer_info info_;
 
-
-    size_t fill_buffer(/*filestream_callback *callback,*/ size_t count)
+    /// Fills buffer with data (count characters) from the source.
+    /// Note: buffer is filled only when all data is read from it.
+    /// Returns count characters read from source or 0 if there is nothing to read.
+    size_t fill_buffer(size_t count)
     {
+        size_t totalr = 0;
+        size_t countr = 0;
         auto charSize = sizeof(char_type);
-        size_t byteCount = count * charSize;
 
-        auto totalr = source_.read(info_.buffer_.data(), byteCount);
-        info_.atend_ = (count > totalr);
-        info_.rdpos_ += totalr;
-
-        // Still TODO
-        // First, we need to understand how far into the buffer we have already read
-        // and how much remains.
-        size_t bufpos = fInfo->m_rdpos - fInfo->m_bufoff;
-        size_t bufrem = fInfo->m_buffill - bufpos;
-
-        if ( bufrem < count )
-        {
-
-        }
+        // check if fill count is actually bigger than what buffer can hold
+        if (count > info_.buffer_.size())
+            countr = info_.buffer_.size();
         else
-        {
-            return byteCount;
-        }
+            countr = count;
+
+        totalr = source_.read(info_.buffer_.data(), countr);
+        info_.atend_ = (countr > totalr);
+        info_.rdpos_  = 0;
+        info_.buffill_ = totalr;
+
+        return totalr;
     }
 
 
@@ -96,7 +118,7 @@ private:
 
         }
         char_type value;
-        auto read_size = this->read(&value, 1, advance);
+        auto read_size = this->read(&value, 1);
         return read_size == 1 ? static_cast<int_type>(value) : traits::eof();
     }
 
@@ -106,13 +128,15 @@ private:
     size_t read(char_type* ptr, size_t count, bool advance = true)
     {
         size_t totalr = 0;
+        size_t charSize = sizeof(char_type);
         auto bufoff = info_.rdpos_ - info_.bufoff_;
 
         if ( in_avail() >= count )
         {
-            std::memcpy((void *)ptr, info_.buffer_.data() + (bufoff * sizeof(char_type)), count * sizeof(char_type));
+            std::memcpy((void *)ptr, info_.buffer_.data() + bufoff, count * charSize);
             totalr = count;
-            info_.rdpos_ += count;
+            if (advance)
+                info_.rdpos_ += count;
         }
         else
         {
@@ -121,11 +145,28 @@ private:
             auto fillcount = count - avail;
             if (avail)
             {
-                std::memcpy((void *)ptr, info_.buffer_.data() + (bufoff * sizeof(char_type)), avail * sizeof(char_type));
+                std::memcpy((void *)ptr, info_.buffer_.data() + bufoff, avail * charSize);
                 totalr = avail;
-                info_.rdpos_ += avail;
+                if (advance)
+                    info_.rdpos_ += avail;
             }
-            fill_buffer(fillcount);
+
+            do
+            {
+                // buffer is filled after all data has been read from it
+                avail = fill_buffer(fillcount);
+                if (avail)
+                {
+                    auto charCount = (avail >= fillcount ? fillcount : avail);
+                    fillcount = (fillcount > avail ? fillcount - avail : 0);
+
+                    std::memcpy((void *)ptr + (totalr * charSize), info_.buffer_.data(), charCount * charSize);
+                    totalr += charCount;
+                    if (advance)
+                        info_.rdpos_ += totalr;
+                }
+
+            } while (fillcount && avail);
         }
         return totalr;
     }
@@ -219,8 +260,8 @@ public:
     template<typename ReadHandler>
     void getn(char_type* ptr, size_t count, ReadHandler handler)
     {
-        int_type res = this->read(ptr, count);
-        async_task::connect(handler, res);
+        read_op<ReadHandler> op(*this, handler);
+        async_task::connect(&read_op<ReadHandler>::read, op, ptr, count);
     }
 
     /// implementation of sgetn() to be used in async_streambuf
@@ -232,29 +273,30 @@ public:
     /// implementation of scopy() to be used in async_streambuf
     size_t scopy(char_type* ptr, size_t count)
     {
-        return this->read(ptr, count, false);
+        return this->read(ptr, count);
     }
 
     /// implementation of bumpc() to be used in async_streambuf
     template<typename ReadHandler>
     void bumpc(ReadHandler handler)
     {
-        int_type res = this->read_byte(true);
-        async_task::connect(handler, res);
+        read_op<ReadHandler> op(*this, handler);
+        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count);
     }
 
     /// implementation of sbumpc() to be used in async_streambuf
     int_type sbumpc()
     {
-        return this->read_byte(true);
+        return this->read_byte();
     }
 
     /// implementation of getc() to be used in async_streambuf
     template<typename ReadHandler>
     void getc(ReadHandler handler)
     {
-        int_type res = this->read_byte(false);
-        async_task::connect(handler, res);
+        bool advance = false;
+        read_op<ReadHandler> op(*this, handler);
+        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count, advance);
     }
 
     /// implementation of sgetc() to be used in async_streambuf
@@ -267,8 +309,9 @@ public:
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
-        int_type res = this->read_byte(true);
-        async_task::connect(handler, res);
+        // TODO move read pointer in advance
+        read_op<ReadHandler> op(*this, handler);
+        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count);
     }
 
     /// implementation of ungetc() to be used in async_streambuf
@@ -287,9 +330,8 @@ public:
     pos_type getpos(std::ios_base::openmode mode = std::ios_base::in) const
     {
         if ((std::ios_base::in != mode) || !this->can_read())
-        {
             return static_cast<pos_type>(traits::eof());
-        }
+
         return this->seekoff(0, std::ios_base::cur, mode);
     }
 
@@ -297,6 +339,8 @@ public:
     pos_type seekpos(pos_type position, std::ios_base::openmode mode = std::ios_base::in)
     {
         pos_type beg(0);
+        if (std::ios_base::in != mode)
+            return static_cast<pos_type>(traits::eof());
 
         // In order to support relative seeking from the end position we need to fix an end position.
         // Technically, there is no end for the stream buffer as new writes would just expand the buffer.

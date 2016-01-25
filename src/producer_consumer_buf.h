@@ -259,6 +259,7 @@ namespace streams
         template<typename ReadHandler>
         void nextc(ReadHandler handler)
         {
+            // TODO move read pointer in advance
             typedef async_streambuf_op<CharType, ReadHandler> op_type;
             op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
             enqueue_request(ev_request(*this, op));
