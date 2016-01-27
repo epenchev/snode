@@ -48,7 +48,7 @@ private:
 
     /// container used for async operations
     template<typename Handler>
-    class read_op
+    struct read_op
     {
     public:
         read_op(sourcebuf<SourceImpl>& buf, Handler h) : handler_(h), buf_(buf)
@@ -70,13 +70,13 @@ private:
         sourcebuf<SourceImpl>& buf_;
     };
 
-    friend class read_op;
+    template<typename Handler> friend class read_op;
     buffer_info info_;
 
     /// Fills buffer with data (count characters) from the source.
     /// Note: buffer is filled only when all data is read from it.
     /// Returns count characters read from source or 0 if there is nothing to read.
-    size_t fill_buffer(size_t count)
+    size_t fill_buffer(size_t count, off_type offset = -1)
     {
         size_t totalr = 0;
         size_t countr = 0;
@@ -88,14 +88,19 @@ private:
         else
             countr = count;
 
-        totalr = source_.read(info_.buffer_.data(), countr);
+        totalr = source_.read(info_.buffer_.data(), countr, offset);
         info_.atend_ = (countr > totalr);
-        info_.rdpos_  = 0;
-        info_.buffill_ = totalr;
+        if (totalr)
+        {
+            if (offset)
+                info_.rdpos_ = offset;
+
+            info_.bufoff_ = info_.rdpos_;
+            info_.buffill_ = totalr;
+        }
 
         return totalr;
     }
-
 
     /// Adjust the internal buffers and pointers when the application seeks to a new read location in the stream.
     size_t seekrdpos(size_t pos)
@@ -180,13 +185,13 @@ public:
         this->close();
     }
 
-    /// implementation of can_seek() to be used in async_streambuf
+    /// can_seek() is used to determine whether a stream buffer supports seeking.
     bool can_seek() const { return this->is_open(); }
 
-    /// implementation of has_size() to be used in async_streambuf
+    /// has_size() is used to determine whether a stream buffer supports size().
     bool has_size() const { return this->is_open(); }
 
-    /// implementation of buffer_size() to be used in async_streambuf
+    /// Gets the stream buffer size only for in direction otherwise 0 is returned.
     size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
     {
         if ( std::ios_base::in == direction )
@@ -195,7 +200,8 @@ public:
             return 0;
     }
 
-    /// implementation of in_avail() to be used in async_streambuf
+    /// Returns the number of characters that are immediately available to be consumed without blocking.
+    /// For details see async_streambuf::in_avail()
     size_t in_avail() const
     {
         if (!this->is_open()) return 0;
@@ -211,49 +217,12 @@ public:
     }
 
     /// Sets the stream buffer implementation to buffer or not buffer.
-    /// implementation of set_buffer_size() to be used in async_streambuf
+    /// For details see async_streambuf::set_buffer_size()
     void set_buffer_size(size_t size, std::ios_base::openmode direction = std::ios_base::in)
     {
         if (std::ios_base::in != direction)
             return;
         info_.buffer_.reserve(size);
-    }
-
-    /// implementation of sync() to be used in async_streambuf
-    bool sync() { return (true); }
-
-    /// implementation of putc() to be used in async_streambuf
-    template<typename WriteHandler>
-    void putc(char_type ch, WriteHandler handler)
-    {
-        async_task::connect(handler, traits::eof());
-    }
-
-    /// implementation of putn() to be used in async_streambuf
-    template<typename WriteHandler>
-    void putn(char_type* ptr, size_t count, WriteHandler handler)
-    {
-        async_task::connect(handler, 0);
-    }
-
-    /// implementation of alloc() to be used in async_streambuf
-    char_type* alloc(size_t count) { return nullptr; }
-
-    /// implementation of commit() to be used in async_streambuf
-    void commit(size_t count) { return; }
-
-    /// implementation of acquire() to be used in async_streambuf
-    bool acquire(char_type*& ptr, size_t& count)
-    {
-        ptr = nullptr;
-        count = 0;
-        return false;
-    }
-
-    /// implementation of release() to be used async_streambuf
-    void release(char_type* ptr, size_t count)
-    {
-        (void)(count);
     }
 
     /// implementation of getn() to be used in async_streambuf
@@ -281,7 +250,7 @@ public:
     void bumpc(ReadHandler handler)
     {
         read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count);
+        async_task::connect(&read_op<ReadHandler>::read_byte, op);
     }
 
     /// implementation of sbumpc() to be used in async_streambuf
@@ -296,7 +265,7 @@ public:
     {
         bool advance = false;
         read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count, advance);
+        async_task::connect(&read_op<ReadHandler>::read_byte, op, advance);
     }
 
     /// implementation of sgetc() to be used in async_streambuf
@@ -309,21 +278,22 @@ public:
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
-        // TODO move read pointer in advance
-        read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read_byte, op, ptr, count);
+        auto pos = seekoff(1, std::ios_base::cur, std::ios_base::in);
+        if (pos == (pos_type)traits::eof())
+            async_task::connect(handler, static_cast<int_type>(traits::eof()));
+        else
+            this->getc(handler);
     }
 
     /// implementation of ungetc() to be used in async_streambuf
     template<typename ReadHandler>
     void ungetc(ReadHandler handler)
     {
-        /*
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
-        if ( pos == (pos_type)traits::eof())
+        if (pos == (pos_type)traits::eof())
             async_task::connect(handler, static_cast<int_type>(traits::eof()));
-        int_type res = this->getc();
-        */
+        else
+            this->getc(handler);
     }
 
     /// implementation of getpos() to be used in async_streambuf
@@ -338,75 +308,50 @@ public:
     /// Seeks to the given position implementation.
     pos_type seekpos(pos_type position, std::ios_base::openmode mode = std::ios_base::in)
     {
-        pos_type beg(0);
-        if (std::ios_base::in != mode)
+        if (std::ios_base::in != mode || !this->can_read())
             return static_cast<pos_type>(traits::eof());
 
-        // In order to support relative seeking from the end position we need to fix an end position.
-        // Technically, there is no end for the stream buffer as new writes would just expand the buffer.
-        // For now, we assume that the current write_end is the end of the buffer. We use this artificial
-        // end to restrict the read head from seeking beyond what is available.
-#if 0
-        pos_type end(data_.size());
+        pos_type beg(0);
+        pos_type end(source_.size());
 
+        // We do not allow reads to seek beyond the end or before the start position.
         if (position >= beg)
         {
             auto pos = static_cast<size_t>(position);
-
-            // Read head
-            if ((mode & std::ios_base::in) && this->can_read())
+            if (position <= end)
             {
-                if (position <= end)
-                {
-                    // We do not allow reads to seek beyond the end or before the start position.
-                    update_current_position(pos);
-                    return static_cast<pos_type>(current_position_);
-                }
+                auto bufend = info_.bufoff_ + info_.buffill_;
+                // if new position is not in buffer ranges, buffer is flushed and refilled.
+                if (bufend < pos || info_.bufoff_ > pos)
+                    info_.rdpos_ = pos;
+                else
+                    fill_buffer(info_.buffer_.size(), pos);
+
+                return static_cast<pos_type>(info_.rdpos_);
             }
-
-            /*
-            // Write head
-            if ((mode & std::ios_base::out) && this->can_write())
-            {
-                // Allocate space
-                resize_for_write(pos);
-
-                // Nothing to really copy
-
-                // Update write head and satisfy read requests if any
-                update_current_position(pos);
-
-                return static_cast<pos_type>(current_position_);
-            }
-            */
         }
-#endif
         return static_cast<pos_type>(traits::eof());
     }
 
     /// Seeks to a position given by a relative offset implementation.
     pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
     {
-#if 0
-        pos_type beg = 0;
-        pos_type cur = static_cast<pos_type>(current_position_);
-        pos_type end = static_cast<pos_type>(data_.size());
-
-        switch ( way )
-        {
-        case std::ios_base::beg:
-            return seekpos(beg + offset, mode);
-
-        case std::ios_base::cur:
-            return seekpos(cur + offset, mode);
-
-        case std::ios_base::end:
-            return seekpos(end + offset, mode);
-
-        default:
+        if ((std::ios_base::in != mode) || !this->can_read())
             return static_cast<pos_type>(traits::eof());
-        }
-#endif
+
+        pos_type beg = 0;
+        pos_type cur = static_cast<pos_type>(info_.rdpos_);
+        pos_type end = static_cast<pos_type>(source_.size());
+
+        if (std::ios_base::beg == way)
+            return seekpos(beg + offset, mode);
+        else if (std::ios_base::cur == way)
+            return seekpos(cur + offset, mode);
+        else if (std::ios_base::end == way)
+            return seekpos(end + offset, mode);
+        else
+            return static_cast<pos_type>(traits::eof());
+
         return 0;
     }
 
