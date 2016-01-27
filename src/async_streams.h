@@ -251,10 +251,11 @@ namespace streams
            return get_impl()->buffer_size(direction);
         }
 
-        /// Sets the stream buffer implementation to buffer or not buffer for the given direction (in or out).
+        /// Sets the stream buffer implementation to buffer (size) or not buffer for the given direction (in or out).
         void set_buffer_size(size_t size, std::ios_base::openmode direction = std::ios_base::in)
         {
-            get_impl()->set_buffer_size(size, direction);
+            if (has_size())
+                get_impl()->set_buffer_size(size, direction);
         }
 
         /// For any input stream, returns the number of characters that are immediately available to be consumed without blocking
@@ -270,13 +271,20 @@ namespace streams
         /// For such streams, the direction parameter defines whether to move the read or the write cursor.</remarks>
         pos_type getpos(std::ios_base::openmode direction) const
         {
-            return get_impl()->getpos(direction);
+            if (can_seek())
+                return get_impl()->getpos(direction);
+            else
+                return traits::eof();
         }
 
-        /// Gets the size of the stream, if known. Calls to has_size() will determine whether the result of size can be relied on.
+        /// Gets the size (count characters) of the stream, if known.
+        /// Calls to has_size() will determine whether the result of size can be relied on.
         size_t size() const
         {
-            return get_impl()->size();
+            if (has_size())
+                return get_impl()->size();
+            else
+                return 0;
         }
 
         /// Seeks to the given position (pos is offset from beginning of the stream) for the given (direction).
@@ -487,6 +495,9 @@ namespace streams
         /// Throws exception if buffer is already allocated
         CharType* alloc(size_t count)
         {
+            if (!this->can_write())
+                return nullptr;
+
             if (alloced_)
                 throw std::logic_error("The buffer is already allocated, this maybe caused by overlap of stream read or write");
 
@@ -503,11 +514,14 @@ namespace streams
         /// Throws exception if buffer is not allocated
         void commit(size_t count)
         {
-            if (!alloced_)
-                throw std::logic_error("The buffer needs to allocate first");
+            if (can_write())
+            {
+                if (!alloced_)
+                    throw std::logic_error("The buffer needs to allocate first");
 
-            get_impl()->commit(count);
-            alloced_ = false;
+                get_impl()->commit(count);
+                alloced_ = false;
+            }
         }
 
 
@@ -522,7 +536,10 @@ namespace streams
         /// a subsequent read will not succeed.
         bool acquire(CharType*& ptr, size_t& count)
         {
-            return get_impl()->acquire(ptr, count);
+            if (can_write())
+                return get_impl()->acquire(ptr, count);
+            else
+                return false;
         }
 
         /// Releases a block of data acquired using ::acquire() method. This frees the stream buffer to de-allocate the
@@ -531,7 +548,8 @@ namespace streams
         /// (count) The number of characters that were read.
         void release(CharType* ptr, size_t count)
         {
-            get_impl()->release(ptr, count);
+            if (can_write())
+                get_impl()->release(ptr, count);
         }
     };
 
