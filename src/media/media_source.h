@@ -28,12 +28,18 @@ public:
     typedef streams::async_istream<char_type, streams::producer_consumer_buffer<char_type> > live_stream_type;
     typedef std::shared_ptr<streambuf_type> streambuf_type_ptr;
 
-    /// Reads up to (count) characters into (ptr) and returns the count of characters copied.
+    /// Reads up to (count) characters into (ptr) and returns the count of characters copied or 0 if the end of the source is reached.
     /// The return value (actual characters copied) could be <= count.
     /// If offset is set to value greater than -1 then source sets read position to this value and all other reads start from that offset.
     size_t read(char_type* ptr, size_t count, off_type offset = -1)
     {
         return readfunc_(this, ptr, count, offset);
+    }
+
+    /// Get the size (count characters) of the source
+    size_t size() const
+    {
+        return sizefunc_(this);
     }
 
     /// Closes the underlying stream buffer preventing further read operations.
@@ -81,12 +87,14 @@ public:
     static media_source* create_object() { return NULL; }
 protected:
 
+    typedef size_t (*size_func) (media_source* base);
     typedef void (*close_func)(media_source* base);
     typedef live_streambuf_type& (*streambuf_func)(media_source* base);
     typedef size_t (*read_func)(media_source* base, char_type* ptr, size_t count, off_type offset);
 
-    media_source(close_func closefunc, read_func readfunc, streambuf_func streambuffunc)
-        : closefunc_(closefunc),
+    media_source(size_func sizefunc, close_func closefunc, read_func readfunc, streambuf_func streambuffunc)
+        : sizefunc_(sizefunc),
+          closefunc_(closefunc),
           readfunc_(readfunc),
           streambuf_func_(streambuffunc),
           streambuf_(std::nullptr_t)
@@ -98,6 +106,7 @@ protected:
     }
 
     /// function bindings with implementation
+    size_func  sizefunc_;
     close_func closefunc_;
     read_func readfunc_;
     streambuf_func streambuf_func_;
@@ -116,6 +125,13 @@ template<typename Impl>
 class media_source_impl : public media_source
 {
 public:
+
+    /// Bridge for media_source::size()
+    static size_t size(media_source* base)
+    {
+        media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
+        return source->impl_.size();
+    }
 
     /// Bridge for media_source::read()
     static void read(media_source* base, char_type* ptr, size_t count, off_type offset)
@@ -138,7 +154,8 @@ public:
         return source->impl_.streambuf();
     }
 
-    media_source_impl(Impl& impl) : media_source(&media_source_impl::close,
+    media_source_impl(Impl& impl) : media_source(&media_source_impl::size,
+                                                 &media_source_impl::close,
                                                  &media_source_impl::read,
                                                  &media_source_impl::streambuf), impl_(impl)
     {}
