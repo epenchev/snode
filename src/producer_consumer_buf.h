@@ -21,8 +21,8 @@ namespace snode
 /// Library for asynchronous streams.
 namespace streams
 {
-    /// The producer_consumer_buffer class serves as a memory-based steam buffer that supports both writing and reading
-    /// sequences of characters. It can be used as a consumer/producer buffer.
+    /// The producer_consumer_buffer class serves as a memory-based stream buffer that supports both writing
+    /// and reading sequences of characters at the same time. It can be used as a consumer/producer buffer.
     template<typename CharType>
     class producer_consumer_buffer : public async_streambuf<CharType, producer_consumer_buffer<CharType>>
     {
@@ -34,7 +34,7 @@ namespace streams
         typedef typename producer_consumer_buffer::int_type int_type;
         typedef typename producer_consumer_buffer::off_type off_type;
 
-        /// Constructor
+        /// Default constructor accepts allocation size in bytes for the internal memory blocks.
         producer_consumer_buffer(size_t alloc_size = 512) : base_stream_type(std::ios_base::out | std::ios_base::in),
             alloc_size_(alloc_size),
             allocblock_(nullptr),
@@ -49,20 +49,19 @@ namespace streams
             blocks_.clear();
         }
 
-        /// internal implementation of can_seek() from async_streambuf
+        /// checks if stream buffer supports seeking.
         bool can_seek() const { return false; }
 
-        /// internal implementation of has_size() from async_streambuf
+        /// checks whether a stream buffer supports size().
         bool has_size() const { return false; }
 
-        /// internal implementation of buffer_size() from async_streambuf
-        size_t buffer_size(std::ios_base::openmode = std::ios_base::in) const
-        { return 0; }
-
-        /// internal implementation of in_avail() from async_streambuf
+        /// For any input stream,
+        /// returns the number of characters that are immediately available to be consumed without blocking.
+        /// For details see async_streambuf::in_avail()
         size_t in_avail() const { return total_; }
 
-        /// internal implementation of getpos() from async_streambuf
+        /// Gets the current read or write position in the stream for the given (direction).
+        /// For details see async_streambuf::getpos()
         pos_type getpos(std::ios_base::openmode mode) const
         {
             if ( ((mode & std::ios_base::in) && !this->can_read()) ||
@@ -79,15 +78,8 @@ namespace streams
                 return (pos_type)traits::eof();
         }
 
-        /// Seeking is not supported
-        /// internal implementation of seekpos() from async_streambuf
-        pos_type seekpos(pos_type, std::ios_base::openmode) { return (pos_type)traits::eof(); }
-
-        /// Seeking is not supported
-        /// internal implementation of seekoff() from async_streambuf
-        pos_type seekoff(off_type , std::ios_base::seekdir , std::ios_base::openmode ) { return (pos_type)traits::eof(); }
-
-        /// internal implementation of alloc() from async_streambuf
+        /// Allocates a contiguous block of memory of (count) bytes and returns it.
+        /// For details see async_streambuf::alloc()
         CharType* alloc(size_t count)
         {
             if (!this->can_write())
@@ -100,12 +92,12 @@ namespace streams
             // easier book keeping
 
             assert(!allocblock_);
-            allocblock_ = std::make_shared<_block>(count);
+            allocblock_ = std::make_shared<mem_block>(count);
             return allocblock_->wbegin();
         }
 
-        /// internal implementation of commit() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Submits a block already allocated by the stream buffer.
+        /// For details see async_streambuf::commit()
         void commit(size_t count)
         {
             // The count does not reflect the actual size of the block.
@@ -120,8 +112,8 @@ namespace streams
             update_write_head(count);
         }
 
-        /// internal implementation of acquire() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Gets a pointer to the next already allocated contiguous block of data.
+        /// For details see async_streambuf::acquire()
         bool acquire(CharType*& ptr, size_t& count)
         {
             count = 0;
@@ -147,8 +139,8 @@ namespace streams
             }
         }
 
-        /// internal implementation of release() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Releases a block of data acquired using acquire() method
+        /// For details see async_streambuf::release()
         void release(CharType* ptr, size_t count)
         {
             if (ptr == nullptr)
@@ -162,15 +154,15 @@ namespace streams
             update_read_head(count);
         }
 
-        /// internal implementation of sync() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// For output streams, flush any internally buffered data to the underlying medium.
         void sync()
         {
             synced_ = this->in_avail();
             fulfill_outstanding();
         }
 
-        /// internal implementation of putc() from async_streambuf
+        /// Writes a single character to the stream buffer.
+        /// For details see async_streambuf::putc()
         template<typename WriteHandler>
         void putc(CharType ch, WriteHandler handler)
         {
@@ -178,7 +170,8 @@ namespace streams
             async_task::connect(handler, res);
         }
 
-        /// internal implementation of putn() from async_streambuf
+        /// Writes a number of characters to the stream buffer from memory.
+        /// For details see async_streambuf::putn()
         template<typename WriteHandler>
         void putn(const CharType* ptr, size_t count, WriteHandler handler)
         {
@@ -186,7 +179,8 @@ namespace streams
             async_task::connect(handler, res);
         }
 
-        /// internal implementation of putn_nocopy() from async_streambuf
+        /// Writes a number of characters to the stream buffer from memory.
+        /// For details see async_streambuf::putn_nocopy()
         template<typename WriteHandler>
         void putn_nocopy(const CharType* ptr, size_t count, WriteHandler handler)
         {
@@ -201,7 +195,8 @@ namespace streams
             async_task::connect(write_fn, ptr, count, op, this);
         }
 
-        /// internal implementation of getn() from async_streambuf
+        /// Reads up to a given number of characters from the stream buffer to memory.
+        /// For details see async_streambuf::getn()
         template<typename ReadHandler>
         void getn(CharType* ptr, size_t count, ReadHandler handler)
         {
@@ -210,20 +205,22 @@ namespace streams
             enqueue_request(ev_request(*this, op, ptr, count));
         }
 
-        /// internal implementation of sgetn() from async_streambuf
+        /// Reads up to a given number of characters from the stream buffer to memory synchronously.
+        /// For details see async_streambuf::sgetn()
         size_t sgetn(CharType* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count) : (size_t)traits::requires_async();
         }
 
-        /// internal implementation of scopy() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Copies up to a given number of characters from the stream buffer to memory synchronously.
+        /// For details see async_streambuf::scopy()
         size_t scopy(CharType* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count, false) : (size_t)traits::requires_async();
         }
 
-        /// internal implementation of bumpc() from async_streambuf
+        /// Reads a single character from the stream and advances the read position.
+        /// For details see async_streambuf::bumpc()
         template<typename ReadHandler>
         void bumpc(ReadHandler handler)
         {
@@ -232,14 +229,15 @@ namespace streams
             enqueue_request(ev_request(*this, op));
         }
 
-        /// internal implementation of sbumpc() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Reads a single character from the stream and advances the read position.
+        /// For details see async_streambuf::sbumpc()
         int_type sbumpc()
         {
             return can_satisfy(1) ? this->read_byte(true) : traits::requires_async();
         }
 
-        /// internal implementation of getc() from async_streambuf
+        /// Reads a single character from the stream without advancing the read position.
+        /// For details see async_streambuf::getc()
         template<typename ReadHandler>
         void getc(ReadHandler handler)
         {
@@ -248,14 +246,15 @@ namespace streams
             enqueue_request(ev_request(*this, op));
         }
 
-        /// internal implementation of sgetc() from async_streambuf
-        /// this operation is not thread safe, instead ensure thread safety via async_task::connect()
+        /// Reads a single character from the stream without advancing the read position.
+        /// For details see async_streambuf::sgetc()
         int_type sgetc()
         {
             return can_satisfy(1) ? this->read_byte(false) : traits::requires_async();
         }
 
-        /// internal implementation of nextc() from async_streambuf
+        /// Advances the read position, then returns the next character without advancing again.
+        /// For details see async_streambuf::nextc()
         template<typename ReadHandler>
         void nextc(ReadHandler handler)
         {
@@ -265,19 +264,21 @@ namespace streams
             enqueue_request(ev_request(*this, op));
         }
 
-        /// internal implementation of ungetc() from async_streambuf
+        /// Retreats the read position, then returns the current character without advancing.
+        /// For details see async_streambuf::ungetc()
         template<typename ReadHandler>
         void ungetc(ReadHandler handler)
         {
             async_task::connect(handler, static_cast<int_type>(traits::eof()));
         }
 
-        // Just for specify the implementation requirements
+        /// Close for reading
         void close_read()
         {
-            // noop
+            this->stream_can_read_ = false;
         }
 
+        /// Close for writing
         void close_write()
         {
             // First indicate that there could be no more writes.
@@ -292,15 +293,15 @@ namespace streams
     private:
 
         /// Represents a memory block
-        class _block
+        class mem_block
         {
         public:
-            _block(size_t size)
+            mem_block(size_t size)
                 : read_(0), pos_(0), size_(size), data_(new CharType[size])
             {
             }
 
-            ~_block()
+            ~mem_block()
             {
                 delete [] data_;
             }
@@ -380,8 +381,8 @@ namespace streams
         private:
 
             // Copy is not supported
-            _block(const _block&);
-            _block& operator=(const _block&);
+            mem_block(const mem_block&);
+            mem_block& operator=(const mem_block&);
         };
 
 
@@ -445,7 +446,7 @@ namespace streams
             if ( blocks_.empty() || blocks_.back()->wr_chars_left() < count )
             {
                 size_t alloc_size = std::max(count, alloc_size_);
-                blocks_.push_back(std::make_shared<_block>((size_t)alloc_size));
+                blocks_.push_back(std::make_shared<mem_block>((size_t)alloc_size));
             }
 
             // The block at the back is always the write head
@@ -559,7 +560,7 @@ namespace streams
                 // If front block is not empty - we are done
                 if (blocks_.front()->rd_chars_left() > 0) break;
 
-                // The block has no more data to be read. Relase the block
+                // The block has no more data to be read. Release the block
                 blocks_.pop_front();
             }
         }
@@ -568,7 +569,7 @@ namespace streams
         size_t alloc_size_;
 
         // Block used for alloc/commit
-        std::shared_ptr<_block> allocblock_;
+        std::shared_ptr<mem_block> allocblock_;
 
         // Total available data
         size_t total_;
@@ -589,7 +590,7 @@ namespace streams
         // pplx::extensibility::critical_section_t m_lock;
 
         // Memory blocks
-        std::deque<std::shared_ptr<_block>> blocks_;
+        std::deque<std::shared_ptr<mem_block>> blocks_;
 
         // Queue of requests
         std::queue<ev_request> requests_;

@@ -20,7 +20,7 @@ namespace streams
 
 /// The basic_container_buffer class serves as a memory-based stream buffer that supports writing or reading
 /// sequences of characters.
-/// A class to allow users to create input and out streams based on STL collections.
+/// A class to allow users to create input and output streams based on STL collections.
 /// The sole purpose of this class to avoid users from having to know anything about stream buffers.
 /// CollectionType - The type of the STL collection (ex. std::string, std::vector ..).
 template<typename CollectionType>
@@ -65,10 +65,10 @@ public:
         this->close_write();
     }
 
-    /// internal implementation of can_seek() from async_streambuf
+    /// checks if stream buffer supports seeking.
     bool can_seek() { return this->is_open(); }
 
-    /// internal implementation of has_size() from async_streambuf
+    /// checks whether a stream buffer supports size().
     bool has_size() { return this->is_open(); }
 
     /// Gets the size of the stream, if known. Calls to has_size() will determine whether
@@ -78,21 +78,21 @@ public:
         return uint64_t(data_.size());
     }
 
-    /// internal implementation of buffer_size() from async_streambuf
+    /// Gets the stream buffer size for in or out direction, if one has been set.
     size_t buffer_size(std::ios_base::openmode = std::ios_base::in) const
     {
         return 0;
     }
 
-    /// Sets the stream buffer implementation to buffer or not buffer.
-    /// (size) The size to use for internal buffering, 0 if no buffering should be done.
-    /// (direction) The direction of buffering (in or out).
+    /// Sets the stream buffer implementation to buffer or not buffer for the given direction.
     void set_buffer_size(size_t , std::ios_base::openmode = std::ios_base::in)
     {
         return;
     }
 
-    /// internal implementation of in_avail() from async_streambuf
+    /// For any input stream,
+    /// returns the number of characters that are immediately available to be consumed without blocking.
+    /// For details see async_streambuf::in_avail()
     size_t in_avail() const
     {
         // See the comment in seek around the restriction that we do not allow read head to
@@ -104,13 +104,14 @@ public:
         return (size_t)(write_end - readhead);
     }
 
-    /// internal implementation of sync() from async_streambuf
+    /// For output streams, flush any internally buffered data to the underlying medium.
     bool sync()
     {
         return (true);
     }
 
-    /// internal implementation of putc() from async_streambuf
+    /// Writes a single character to the stream buffer.
+    /// For details see async_streambuf::putc()
     template<typename WriteHandler>
     void putc(CharType ch, WriteHandler handler)
     {
@@ -118,7 +119,8 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of putn() from async_streambuf
+    /// Writes a number of characters to the stream buffer from memory.
+    /// For details see async_streambuf::putn()
     template<typename WriteHandler>
     void putn(CharType* ptr, size_t count, WriteHandler handler)
     {
@@ -126,11 +128,12 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of alloc() from async_streambuf
+    /// Allocates a contiguous block of memory of (count) bytes and returns it.
+    /// For details see async_streambuf::alloc()
     CharType* alloc(size_t count)
     {
-        if (!this->can_write()) return nullptr;
-
+        if (!this->can_write())
+            return nullptr;
         // Allocate space
         resize_for_write(current_position_+count);
 
@@ -138,14 +141,16 @@ public:
         return (CharType*)&data_[current_position_];
     }
 
-    /// internal implementation of commit() from async_streambuf
+    /// Submits a block already allocated by the stream buffer.
+    /// For details see async_streambuf::commit()
     void commit(size_t count)
     {
         // Update the write position and satisfy any pending reads
         update_current_position(current_position_ + count);
     }
 
-    /// internal implementation of acquire() from async_streambuf
+    /// Gets a pointer to the next already allocated contiguous block of data.
+    /// For details see async_streambuf::acquire()
     bool acquire(CharType*& ptr, size_t& count)
     {
         ptr = nullptr;
@@ -168,7 +173,8 @@ public:
         }
     }
 
-    /// internal implementation of release() from async_streambuf
+    /// Releases a block of data acquired using acquire() method
+    /// For details see async_streambuf::release()
     void release(CharType* ptr, size_t count)
     {
         if (ptr != nullptr)
@@ -177,7 +183,8 @@ public:
         }
     }
 
-    /// internal implementation of getn() from async_streambuf
+    /// Reads up to a given number of characters from the stream buffer to memory.
+    /// For details see async_streambuf::getn()
     template<typename ReadHandler>
     void getn(CharType* ptr, size_t count, ReadHandler handler)
     {
@@ -185,19 +192,22 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sgetn() from async_streambuf
+    /// Reads up to a given number of characters from the stream buffer to memory synchronously.
+    /// For details see async_streambuf::sgetn()
     size_t sgetn(CharType* ptr, size_t count)
     {
         return this->read(ptr, count);
     }
 
-    /// internal implementation of scopy() from async_streambuf
+    /// Copies up to a given number of characters from the stream buffer to memory synchronously.
+    /// For details see async_streambuf::scopy()
     size_t scopy(CharType* ptr, size_t count)
     {
         return this->read(ptr, count, false);
     }
 
-    /// internal implementation of bumpc() from async_streambuf
+    /// Reads a single character from the stream and advances the read position.
+    /// For details see async_streambuf::bumpc()
     template<typename ReadHandler>
     void bumpc(ReadHandler handler)
     {
@@ -205,13 +215,15 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sbumpc() from async_streambuf
+    /// Reads a single character from the stream and advances the read position.
+    /// For details see async_streambuf::sbumpc()
     int_type sbumpc()
     {
         return this->read_byte(true);
     }
 
-    /// internal implementation of getc() from async_streambuf
+    /// Reads a single character from the stream without advancing the read position.
+    /// For details see async_streambuf::getc()
     template<typename ReadHandler>
     void getc(ReadHandler handler)
     {
@@ -219,13 +231,15 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of sgetc() from async_streambuf
+    /// Reads a single character from the stream without advancing the read position.
+    /// For details see async_streambuf::sgetc()
     int_type sgetc()
     {
         return this->read_byte(false);
     }
 
-    /// internal implementation of nextc() from async_streambuf
+    /// Advances the read position, then returns the next character without advancing again.
+    /// For details see async_streambuf::nextc()
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
@@ -234,7 +248,8 @@ public:
         async_task::connect(handler, res);
     }
 
-    /// internal implementation of ungetc() from async_streambuf
+    /// Retreats the read position, then returns the current character without advancing.
+    /// For details see async_streambuf::ungetc()
     template<typename ReadHandler>
     void ungetc(ReadHandler handler)
     {
@@ -246,7 +261,8 @@ public:
         */
     }
 
-    /// internal implementation of getpos() from async_streambuf
+    /// Gets the current read or write position in the stream for the given direction.
+    /// For details see async_streambuf::getpos()
     pos_type getpos(std::ios_base::openmode mode) const
     {
         if ( ((mode & std::ios_base::in) && !this->can_read()) ||
@@ -258,7 +274,8 @@ public:
         return static_cast<pos_type>(current_position_);
     }
 
-    /// Seeks to the given position implementation.
+    /// Seeks to the given position for the given (direction).
+    /// For details see async_streambuf::seekpos()
     pos_type seekpos(pos_type position, std::ios_base::openmode mode)
     {
         pos_type beg(0);
@@ -303,7 +320,8 @@ public:
         return static_cast<pos_type>(traits::eof());
     }
 
-    /// Seeks to a position given by a relative offset implementation.
+    /// Seeks to a position given by a relative offset.
+    /// For details see async_streambuf::seekoff()
     pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
     {
         pos_type beg = 0;
@@ -328,12 +346,12 @@ public:
 
     void close_read()
     {
-        // todo implementation
+        this->stream_can_read_ = false;
     }
 
     void close_write()
     {
-        // todo implementation
+        this->stream_can_write_ = false;
     }
 
 private:
@@ -345,9 +363,7 @@ private:
             throw std::invalid_argument("this combination of modes on container stream not supported");
     }
 
-    /// <summary>
     /// Determine if the request can be satisfied.
-    /// </summary>
     bool can_satisfy(size_t)
     {
         // We can always satisfy a read, at least partially, unless the
@@ -355,10 +371,9 @@ private:
         return (in_avail() > 0);
     }
 
-    /// <summary>
     /// Reads a byte from the stream and returns it as int_type.
+    /// If advance is set move the read head.
     /// Note: This routine shall only be called if can_satisfy() returned true.
-    /// </summary>
     int_type read_byte(bool advance = true)
     {
         CharType value;
@@ -369,6 +384,7 @@ private:
 
     /// Reads up to count characters into ptr and returns the count of characters copied.
     /// The return value (actual characters copied) could be <= count.
+    /// If advance is set move the read head.
     /// Note: This routine shall only be called if can_satisfy() returned true.
     size_t read(CharType *ptr, size_t count, bool advance = true)
     {

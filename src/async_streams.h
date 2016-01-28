@@ -156,18 +156,6 @@ namespace streams
         // The in/out mode for the buffer
         bool stream_can_read_, stream_can_write_, stream_read_eof_, alloced_;
 
-        /// Get the internal implementation of the async_streambuf core functions.
-        /// Returns the object holding the current implementation.
-        inline Impl* get_impl()
-        {
-            return static_cast<Impl*>(this);
-        }
-
-        inline const Impl* get_impl() const
-        {
-            return static_cast<const Impl*>(this);
-        }
-
         /// The real read head close operation,
         /// implementation should override it if there is any resource to be released.
         void close_read()
@@ -190,6 +178,19 @@ namespace streams
         }
 
     public:
+
+        /// Get the internal implementation of the async_streambuf core functions.
+        /// Returns the object holding the current implementation.
+        inline Impl* get_impl()
+        {
+            return static_cast<Impl*>(this);
+        }
+
+        inline const Impl* get_impl() const
+        {
+            return static_cast<const Impl*>(this);
+        }
+
         /// Default constructor, (mode) the I/O mode (in or out) of the buffer.
         async_streambuf(std::ios_base::openmode mode)
         {
@@ -248,7 +249,9 @@ namespace streams
         /// Gets the stream buffer size for in or out direction, if one has been set.
         size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
         {
-           return get_impl()->buffer_size(direction);
+            if (has_size())
+                return get_impl()->buffer_size(direction);
+            return 0;
         }
 
         /// Sets the stream buffer implementation to buffer (size) or not buffer for the given direction (in or out).
@@ -292,7 +295,9 @@ namespace streams
         /// Some streams may have separate write and read cursors. For such streams the direction parameter defines whether to move the read or the write cursor.
         pos_type seekpos(pos_type pos, std::ios_base::openmode direction)
         {
-            return get_impl()->seekpos(pos, direction);
+            if (can_seek())
+                return get_impl()->seekpos(pos, direction);
+            return traits::eof();
         }
 
         /// Seeks to a position given by a relative (offset) with starting point (way beginning, end, current) for the seek and with I/O direction (pos in/out).
@@ -301,7 +306,9 @@ namespace streams
         /// the mode parameter defines whether to move the read or the write cursor.
         pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
         {
-            return get_impl()->seekof(offset, way, mode);
+            if (can_seek())
+                return get_impl()->seekof(offset, way, mode);
+            return traits::eof();
         }
 
         /// Closes the stream buffer for the I/O mode (in or out), preventing further read or write operations.
@@ -445,7 +452,7 @@ namespace streams
             get_impl()->ungetc(handler);
         }
 
-        /// Reads up to a given number (count) of characters from the stream from source memory (ptr).
+        /// Reads up to a given number (count) of characters from the stream buffer to source memory (ptr).
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
@@ -461,8 +468,26 @@ namespace streams
             }
         }
 
-        /// Copies up to a given number (count) of characters from the stream to memory (ptr) synchronously.
-        /// Returns the number of characters copied. 0 if the end of the stream is reached or an asynchronous read is required.
+        /// Reads up to a given number (count) of characters from the stream buffer to memory (ptr) synchronously.
+        /// Returns the number of characters copied. 0 if the end of the stream is reached or an asynchronous
+        /// (traits::requires_async) read is required.
+        /// This is a synchronous operation, but is guaranteed to never block.
+        size_t sgetn(CharType* ptr, size_t count)
+        {
+            if (count)
+            {
+                if (!can_read())
+                    return 0;
+                else
+                    return get_impl()->sgetn(ptr, count);
+            }
+            return 0;
+        }
+
+        /// Copies up to a given number (count) of characters from the stream buffer to memory (ptr),
+        /// this is done synchronously without advancing the read head.
+        /// Returns the number of characters copied.
+        /// 0 if the end of the stream is reached or an asynchronous (traits::requires_async) read is required.
         /// This is a synchronous operation, but is guaranteed to never block.
         size_t scopy(CharType* ptr, size_t count)
         {
@@ -523,7 +548,6 @@ namespace streams
                 alloced_ = false;
             }
         }
-
 
         /// Gets a pointer to the next already allocated contiguous block of data.
         /// (ptr) A reference to a pointer variable that will hold the address of the block on success.

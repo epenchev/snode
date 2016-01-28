@@ -13,9 +13,9 @@ namespace snode
 namespace streams
 {
 
-/// The sourcebuf class serves as a memory-based stream buffer that supports only reading
-/// sequences of characters from a arbitrary static source object that complies with SourceImpl interface.
-/// SourceImpl can be anything not depending from the medium (file, memory, network ..)
+/// The sourcebuf class serves as a memory-based stream buffer that supports only reading,
+/// sequences of characters can be read from a arbitrary static (data is a constant) source object that complies with SourceImpl interface.
+/// SourceImpl can be anything not depending from the medium (file, memory, network storage ..)
 template<typename SourceImpl>
 class sourcebuf : public async_streambuf<typename SourceImpl::char_type, sourcebuf<SourceImpl>>
 {
@@ -225,7 +225,8 @@ public:
         info_.buffer_.reserve(size);
     }
 
-    /// implementation of getn() to be used in async_streambuf
+    /// Reads up to a given number characters from the stream buffer from memory.
+    /// For details see async_streambuf::getn()
     template<typename ReadHandler>
     void getn(char_type* ptr, size_t count, ReadHandler handler)
     {
@@ -233,19 +234,15 @@ public:
         async_task::connect(&read_op<ReadHandler>::read, op, ptr, count);
     }
 
-    /// implementation of sgetn() to be used in async_streambuf
-    size_t sgetn(char_type* ptr, size_t count)
-    {
-        return this->read(ptr, count);
-    }
-
-    /// implementation of scopy() to be used in async_streambuf
+    /// Copies up to a given number characters from the stream buffer to memory synchronously.
+    /// For details see async_streambuf::scopy()
     size_t scopy(char_type* ptr, size_t count)
     {
         return this->read(ptr, count);
     }
 
-    /// implementation of bumpc() to be used in async_streambuf
+    /// Reads a single character from the stream and advances the read position.
+    /// For details see async_streambuf::bumpc()
     template<typename ReadHandler>
     void bumpc(ReadHandler handler)
     {
@@ -253,13 +250,15 @@ public:
         async_task::connect(&read_op<ReadHandler>::read_byte, op);
     }
 
-    /// implementation of sbumpc() to be used in async_streambuf
+    /// Reads a single character from the stream and advances the read position.
+    /// For details see async_streambuf::sbumpc()
     int_type sbumpc()
     {
         return this->read_byte();
     }
 
-    /// implementation of getc() to be used in async_streambuf
+    /// Reads a single character from the stream without advancing the read position.
+    /// For details see async_streambuf::getc()
     template<typename ReadHandler>
     void getc(ReadHandler handler)
     {
@@ -268,13 +267,15 @@ public:
         async_task::connect(&read_op<ReadHandler>::read_byte, op, advance);
     }
 
-    /// implementation of sgetc() to be used in async_streambuf
+    /// Reads a single character from the stream without advancing the read position.
+    /// For details see async_streambuf::sgetc()
     int_type sgetc()
     {
         return this->read_byte(false);
     }
 
-    /// implementation of nextc() to be used in async_streambuf
+    /// Advances the read position, then returns the next character without advancing again.
+    /// For details see async_streambuf::nextc()
     template<typename ReadHandler>
     void nextc(ReadHandler handler)
     {
@@ -285,7 +286,8 @@ public:
             this->getc(handler);
     }
 
-    /// implementation of ungetc() to be used in async_streambuf
+    /// Retreats the read position, then returns the current character without advancing.
+    /// For details see async_streambuf::ungetc()
     template<typename ReadHandler>
     void ungetc(ReadHandler handler)
     {
@@ -296,7 +298,8 @@ public:
             this->getc(handler);
     }
 
-    /// implementation of getpos() to be used in async_streambuf
+    /// Gets the current read position in the stream.
+    /// For details see async_streambuf::getpos()
     pos_type getpos(std::ios_base::openmode mode = std::ios_base::in) const
     {
         if ((std::ios_base::in != mode) || !this->can_read())
@@ -305,7 +308,8 @@ public:
         return this->seekoff(0, std::ios_base::cur, mode);
     }
 
-    /// Seeks to the given position implementation.
+    /// Seeks to the given position (pos is offset from beginning of the stream).
+    /// For details see async_streambuf::seekpos()
     pos_type seekpos(pos_type position, std::ios_base::openmode mode = std::ios_base::in)
     {
         if (std::ios_base::in != mode || !this->can_read())
@@ -333,7 +337,8 @@ public:
         return static_cast<pos_type>(traits::eof());
     }
 
-    /// Seeks to a position given by a relative offset implementation.
+    /// Seeks to a position given by a relative (offset) with starting point (way beginning, end, current).
+    /// For details see async_streambuf::seekoff()
     pos_type seekoff(off_type offset, std::ios_base::seekdir way, std::ios_base::openmode mode)
     {
         if ((std::ios_base::in != mode) || !this->can_read())
@@ -355,14 +360,13 @@ public:
         return 0;
     }
 
+    /// Close for reading
     void close_read()
     {
         this->stream_can_read_ = false;
         source_.close();
     }
 
-    void close_write()
-    {}
 };
 
 }}
