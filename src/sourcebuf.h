@@ -17,12 +17,12 @@ namespace streams
 /// sequences of characters can be read from a arbitrary static (data is a constant) source object that complies with SourceImpl interface.
 /// SourceImpl can be anything not depending from the medium (file, memory, network storage ..)
 template<typename SourceImpl>
-class sourcebuf : public async_streambuf<typename SourceImpl::char_type, sourcebuf<SourceImpl>>
+class sourcebuf : public async_streambuf<sourcebuf<SourceImpl> >
 {
 private:
     SourceImpl& source_;
     typedef typename SourceImpl::char_type char_type;
-    typedef async_streambuf<char_type, sourcebuf<SourceImpl>> base_stream_type;
+    typedef async_streambuf<sourcebuf<SourceImpl> > base_streambuf_type;
     typedef typename sourcebuf::traits traits;
     typedef typename sourcebuf::pos_type pos_type;
     typedef typename sourcebuf::int_type int_type;
@@ -177,7 +177,7 @@ private:
     }
 
 public:
-    sourcebuf(SourceImpl& source) : base_stream_type(std::ios_base::in), source_(source), info_(512)
+    sourcebuf(SourceImpl& source) : base_streambuf_type(std::ios_base::in), source_(source), info_(512)
     {}
 
     ~sourcebuf()

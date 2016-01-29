@@ -24,18 +24,18 @@ namespace streams
     /// The producer_consumer_buffer class serves as a memory-based stream buffer that supports both writing
     /// and reading sequences of characters at the same time. It can be used as a consumer/producer buffer.
     template<typename CharType>
-    class producer_consumer_buffer : public async_streambuf<CharType, producer_consumer_buffer<CharType>>
+    class producer_consumer_buffer : public async_streambuf<producer_consumer_buffer<CharType> >
     {
     public:
         typedef CharType char_type;
-        typedef async_streambuf<CharType, producer_consumer_buffer> base_stream_type;
+        typedef async_streambuf<producer_consumer_buffer> base_streambuf_type;
         typedef typename producer_consumer_buffer::traits traits;
         typedef typename producer_consumer_buffer::pos_type pos_type;
         typedef typename producer_consumer_buffer::int_type int_type;
         typedef typename producer_consumer_buffer::off_type off_type;
 
         /// Default constructor accepts allocation size in bytes for the internal memory blocks.
-        producer_consumer_buffer(size_t alloc_size = 512) : base_stream_type(std::ios_base::out | std::ios_base::in),
+        producer_consumer_buffer(size_t alloc_size = 512) : base_streambuf_type(std::ios_base::out | std::ios_base::in),
             alloc_size_(alloc_size),
             allocblock_(nullptr),
             total_(0), total_read_(0), total_written_(0),
@@ -80,7 +80,7 @@ namespace streams
 
         /// Allocates a contiguous block of memory of (count) bytes and returns it.
         /// For details see async_streambuf::alloc()
-        CharType* alloc(size_t count)
+        char_type* alloc(size_t count)
         {
             if (!this->can_write())
             {
@@ -114,7 +114,7 @@ namespace streams
 
         /// Gets a pointer to the next already allocated contiguous block of data.
         /// For details see async_streambuf::acquire()
-        bool acquire(CharType*& ptr, size_t& count)
+        bool acquire(char_type*& ptr, size_t& count)
         {
             count = 0;
             ptr = nullptr;
@@ -141,7 +141,7 @@ namespace streams
 
         /// Releases a block of data acquired using acquire() method
         /// For details see async_streambuf::release()
-        void release(CharType* ptr, size_t count)
+        void release(char_type* ptr, size_t count)
         {
             if (ptr == nullptr)
                 return;
@@ -164,7 +164,7 @@ namespace streams
         /// Writes a single character to the stream buffer.
         /// For details see async_streambuf::putc()
         template<typename WriteHandler>
-        void putc(CharType ch, WriteHandler handler)
+        void putc(char_type ch, WriteHandler handler)
         {
             int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
             async_task::connect(handler, res);
@@ -173,7 +173,7 @@ namespace streams
         /// Writes a number of characters to the stream buffer from memory.
         /// For details see async_streambuf::putn()
         template<typename WriteHandler>
-        void putn(const CharType* ptr, size_t count, WriteHandler handler)
+        void putn(const char_type* ptr, size_t count, WriteHandler handler)
         {
             size_t res = this->write(ptr, count);
             async_task::connect(handler, res);
@@ -182,12 +182,12 @@ namespace streams
         /// Writes a number of characters to the stream buffer from memory.
         /// For details see async_streambuf::putn_nocopy()
         template<typename WriteHandler>
-        void putn_nocopy(const CharType* ptr, size_t count, WriteHandler handler)
+        void putn_nocopy(const char_type* ptr, size_t count, WriteHandler handler)
         {
-            typedef async_streambuf_op<CharType, WriteHandler> op_type;
-            op_type* op = new async_streambuf_op<CharType, WriteHandler>(handler);
-            auto write_fn = [](const CharType* ptr, size_t count,
-                               async_streambuf_op_base<CharType>* op, producer_consumer_buffer<CharType>* buf)
+            typedef async_streambuf_op<char_type, WriteHandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, WriteHandler>(handler);
+            auto write_fn = [](const char_type* ptr, size_t count,
+                               async_streambuf_op_base<char_type>* op, producer_consumer_buffer<char_type>* buf)
             {
                 size_t res = buf->write(ptr, count);
                 op->complete_size(res);
@@ -198,23 +198,23 @@ namespace streams
         /// Reads up to a given number of characters from the stream buffer to memory.
         /// For details see async_streambuf::getn()
         template<typename ReadHandler>
-        void getn(CharType* ptr, size_t count, ReadHandler handler)
+        void getn(char_type* ptr, size_t count, ReadHandler handler)
         {
-            typedef async_streambuf_op<CharType, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
             enqueue_request(ev_request(*this, op, ptr, count));
         }
 
         /// Reads up to a given number of characters from the stream buffer to memory synchronously.
         /// For details see async_streambuf::sgetn()
-        size_t sgetn(CharType* ptr, size_t count)
+        size_t sgetn(char_type* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count) : (size_t)traits::requires_async();
         }
 
         /// Copies up to a given number of characters from the stream buffer to memory synchronously.
         /// For details see async_streambuf::scopy()
-        size_t scopy(CharType* ptr, size_t count)
+        size_t scopy(char_type* ptr, size_t count)
         {
             return can_satisfy(count) ? this->read(ptr, count, false) : (size_t)traits::requires_async();
         }
@@ -224,8 +224,8 @@ namespace streams
         template<typename ReadHandler>
         void bumpc(ReadHandler handler)
         {
-            typedef async_streambuf_op<CharType, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -241,8 +241,8 @@ namespace streams
         template<typename ReadHandler>
         void getc(ReadHandler handler)
         {
-            typedef async_streambuf_op<CharType, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -259,8 +259,8 @@ namespace streams
         void nextc(ReadHandler handler)
         {
             // TODO move read pointer in advance
-            typedef async_streambuf_op<CharType, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<CharType, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, ReadHandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -297,7 +297,7 @@ namespace streams
         {
         public:
             mem_block(size_t size)
-                : read_(0), pos_(0), size_(size), data_(new CharType[size])
+                : read_(0), pos_(0), size_(size), data_(new char_type[size])
             {
             }
 
@@ -316,32 +316,32 @@ namespace streams
             size_t size_;
 
             // The data store
-            CharType* data_;
+            char_type* data_;
 
             /// Pointer to the read head
-            CharType* rbegin()
+            char_type* rbegin()
             {
                 return data_ + read_;
             }
 
             /// Pointer to the write head
-            CharType* wbegin()
+            char_type* wbegin()
             {
                 return data_ + pos_;
             }
 
             /// Read up to count characters from the block
-            size_t read(CharType* dest, size_t count, bool advance = true)
+            size_t read(char_type* dest, size_t count, bool advance = true)
             {
                 size_t avail = rd_chars_left();
                 auto readcount = std::min(count, avail);
 
-                CharType* beg = rbegin();
-                CharType* end = rbegin() + readcount;
+                char_type* beg = rbegin();
+                char_type* end = rbegin() + readcount;
 
 #ifdef _WIN32
                     // Avoid warning C4996: Use checked iterators under SECURE_SCL
-                    std::copy(beg, end, stdext::checked_array_iterator<CharType*>(dest, count));
+                    std::copy(beg, end, stdext::checked_array_iterator<char_type*>(dest, count));
 #else
                     std::copy(beg, end, dest);
 #endif // _WIN32
@@ -352,16 +352,16 @@ namespace streams
             }
 
             /// Write count characters into the block
-            size_t write(const CharType* src, size_t count)
+            size_t write(const char_type* src, size_t count)
             {
                 size_t avail = wr_chars_left();
                 auto wrcount = std::min(count, avail);
 
-                const CharType* src_end = src + wrcount;
+                const char_type* src_end = src + wrcount;
 
 #ifdef _WIN32
                 // Avoid warning C4996: Use checked iterators under SECURE_SCL
-                std::copy(src, src_end, stdext::checked_array_iterator<_CharType *>(wbegin(), static_cast<size_t>(avail)));
+                std::copy(src, src_end, stdext::checked_array_iterator<char_type *>(wbegin(), static_cast<size_t>(avail)));
 #else
                 std::copy(src, src_end, wbegin());
 #endif // _WIN32
@@ -390,8 +390,8 @@ namespace streams
         class ev_request
         {
         public:
-            ev_request(producer_consumer_buffer<CharType>& parent, async_streambuf_op_base<CharType>* op,
-                       CharType* ptr = nullptr, size_t count = 1)
+            ev_request(producer_consumer_buffer<char_type>& parent, async_streambuf_op_base<char_type>* op,
+                       char_type* ptr = nullptr, size_t count = 1)
             : count_(count), bufptr_(ptr), parent_(parent), completion_op_(op)
             {}
 
@@ -405,12 +405,12 @@ namespace streams
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
                     size_t countread = parent_.read(bufptr_, count_);
-                    async_task::connect(&async_streambuf_op_base<CharType>::complete_size, completion_op_, countread);
+                    async_task::connect(&async_streambuf_op_base<char_type>::complete_size, completion_op_, countread);
                 }
                 else
                 {
                     int_type value = parent_.read_byte();
-                    async_task::connect(&async_streambuf_op_base<CharType>::complete_ch, completion_op_, value);
+                    async_task::connect(&async_streambuf_op_base<char_type>::complete_ch, completion_op_, value);
                     // This  is really a bug just take the time to make a full investigation for it TODO
                     // completion_op_->complete_ch(value);
                 }
@@ -418,9 +418,9 @@ namespace streams
 
         protected:
             size_t count_;
-            CharType* bufptr_;
-            producer_consumer_buffer<CharType>& parent_;
-            async_streambuf_op_base<CharType>* completion_op_;
+            char_type* bufptr_;
+            producer_consumer_buffer<char_type>& parent_;
+            async_streambuf_op_base<char_type>* completion_op_;
         };
 
         /// Updates the write head by an offset specified by count
@@ -433,7 +433,7 @@ namespace streams
         }
 
         /// Writes count characters from ptr into the stream buffer
-        size_t write(const CharType* ptr, size_t count)
+        size_t write(const char_type* ptr, size_t count)
         {
             if (!this->can_write() || (count == 0)) return 0;
 
@@ -459,7 +459,7 @@ namespace streams
         }
 
         /// Writes count characters from ptr into the stream buffer
-        size_t write_locked(const CharType* ptr, size_t count)
+        size_t write_locked(const char_type* ptr, size_t count)
         {
             lib::lock_guard<lib::recursive_mutex> lockg(mutex_);
             return this->write(ptr, count);
@@ -509,7 +509,7 @@ namespace streams
         /// Note: This routine shall only be called if can_satisfy() returned true.
         int_type read_byte(bool advance = true)
         {
-            CharType value;
+            char_type value;
             auto read_size = this->read(&value, 1, advance);
             return read_size == 1 ? static_cast<int_type>(value) : traits::eof();
         }
@@ -517,7 +517,7 @@ namespace streams
         /// Reads up to (count) characters into (ptr) and returns the count of characters copied.
         /// The return value (actual characters copied) could be <= count.
         /// Note: This routine shall only be called if can_satisfy() returned true.
-        size_t read(CharType* ptr, size_t count, bool advance = true)
+        size_t read(char_type* ptr, size_t count, bool advance = true)
         {
             assert(can_satisfy(count));
 

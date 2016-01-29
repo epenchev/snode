@@ -24,12 +24,11 @@ namespace streams
 /// The sole purpose of this class to avoid users from having to know anything about stream buffers.
 /// CollectionType - The type of the STL collection (ex. std::string, std::vector ..).
 template<typename CollectionType>
-class container_buffer : public async_streambuf<typename CollectionType::value_type, container_buffer<CollectionType>>
+class container_buffer : public async_streambuf<container_buffer<CollectionType> >
 {
 public:
     typedef typename CollectionType::value_type char_type;
-    typedef typename CollectionType::value_type CharType;
-    typedef async_streambuf<CharType, container_buffer> base_stream_type;
+    typedef async_streambuf<container_buffer> base_streambuf_type;
     typedef typename container_buffer<CollectionType>::traits traits;
     typedef typename container_buffer<CollectionType>::int_type int_type;
     typedef typename container_buffer<CollectionType>::pos_type pos_type;
@@ -43,14 +42,14 @@ public:
 
 
     /// Constructor
-    container_buffer(std::ios_base::openmode mode) : base_stream_type(mode), current_position_(0)
+    container_buffer(std::ios_base::openmode mode) : base_streambuf_type(mode), current_position_(0)
     {
         validate_mode(mode);
     }
 
     /// Constructor
     container_buffer(CollectionType data, std::ios_base::openmode mode)
-      : base_stream_type(std::ios_base::out | std::ios_base::in), data_(std::move(data)), current_position_(0)
+      : base_streambuf_type(std::ios_base::out | std::ios_base::in), data_(std::move(data)), current_position_(0)
               //current_position_((mode & std::ios_base::in) ? 0 : data_.size())
     {
         validate_mode(mode);
@@ -113,7 +112,7 @@ public:
     /// Writes a single character to the stream buffer.
     /// For details see async_streambuf::putc()
     template<typename WriteHandler>
-    void putc(CharType ch, WriteHandler handler)
+    void putc(char_type ch, WriteHandler handler)
     {
         int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
         async_task::connect(handler, res);
@@ -122,7 +121,7 @@ public:
     /// Writes a number of characters to the stream buffer from memory.
     /// For details see async_streambuf::putn()
     template<typename WriteHandler>
-    void putn(CharType* ptr, size_t count, WriteHandler handler)
+    void putn(char_type* ptr, size_t count, WriteHandler handler)
     {
         size_t res = this->write(ptr, count);
         async_task::connect(handler, res);
@@ -130,7 +129,7 @@ public:
 
     /// Allocates a contiguous block of memory of (count) bytes and returns it.
     /// For details see async_streambuf::alloc()
-    CharType* alloc(size_t count)
+    char_type* alloc(size_t count)
     {
         if (!this->can_write())
             return nullptr;
@@ -138,7 +137,7 @@ public:
         resize_for_write(current_position_+count);
 
         // Let the caller copy the data
-        return (CharType*)&data_[current_position_];
+        return (char_type*)&data_[current_position_];
     }
 
     /// Submits a block already allocated by the stream buffer.
@@ -151,7 +150,7 @@ public:
 
     /// Gets a pointer to the next already allocated contiguous block of data.
     /// For details see async_streambuf::acquire()
-    bool acquire(CharType*& ptr, size_t& count)
+    bool acquire(char_type*& ptr, size_t& count)
     {
         ptr = nullptr;
         count = 0;
@@ -162,7 +161,7 @@ public:
 
         if (count > 0)
         {
-            ptr = (CharType*)&data_[current_position_];
+            ptr = (char_type*)&data_[current_position_];
             return true;
         }
         else
@@ -175,7 +174,7 @@ public:
 
     /// Releases a block of data acquired using acquire() method
     /// For details see async_streambuf::release()
-    void release(CharType* ptr, size_t count)
+    void release(char_type* ptr, size_t count)
     {
         if (ptr != nullptr)
         {
@@ -186,7 +185,7 @@ public:
     /// Reads up to a given number of characters from the stream buffer to memory.
     /// For details see async_streambuf::getn()
     template<typename ReadHandler>
-    void getn(CharType* ptr, size_t count, ReadHandler handler)
+    void getn(char_type* ptr, size_t count, ReadHandler handler)
     {
         int_type res = this->read(ptr, count);
         async_task::connect(handler, res);
@@ -194,14 +193,14 @@ public:
 
     /// Reads up to a given number of characters from the stream buffer to memory synchronously.
     /// For details see async_streambuf::sgetn()
-    size_t sgetn(CharType* ptr, size_t count)
+    size_t sgetn(char_type* ptr, size_t count)
     {
         return this->read(ptr, count);
     }
 
     /// Copies up to a given number of characters from the stream buffer to memory synchronously.
     /// For details see async_streambuf::scopy()
-    size_t scopy(CharType* ptr, size_t count)
+    size_t scopy(char_type* ptr, size_t count)
     {
         return this->read(ptr, count, false);
     }
@@ -376,7 +375,7 @@ private:
     /// Note: This routine shall only be called if can_satisfy() returned true.
     int_type read_byte(bool advance = true)
     {
-        CharType value;
+        char_type value;
         auto read_size = this->read(&value, 1, advance);
         return read_size == 1 ? static_cast<int_type>(value) : traits::eof();
     }
@@ -386,7 +385,7 @@ private:
     /// The return value (actual characters copied) could be <= count.
     /// If advance is set move the read head.
     /// Note: This routine shall only be called if can_satisfy() returned true.
-    size_t read(CharType *ptr, size_t count, bool advance = true)
+    size_t read(char_type *ptr, size_t count, bool advance = true)
     {
         if (!can_satisfy(count))
         {
@@ -403,7 +402,7 @@ private:
 
 #ifdef _WIN32
         // Avoid warning C4996: Use checked iterators under SECURE_SCL
-        std::copy(readBegin, readEnd, stdext::checked_array_iterator<CharType *>(ptr, count));
+        std::copy(readBegin, readEnd, stdext::checked_array_iterator<char_type *>(ptr, count));
 #else
         std::copy(read_begin, read_end, ptr);
 #endif // _WIN32
@@ -417,7 +416,7 @@ private:
     }
 
     /// Write count characters from the ptr into the stream buffer
-    size_t write(const CharType *ptr, size_t count)
+    size_t write(const char_type *ptr, size_t count)
     {
         if (!this->can_write() || (count == 0))
         {
