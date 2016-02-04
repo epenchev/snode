@@ -6,7 +6,13 @@ template<typename CharType, typename Impl>
 class streambuf_base
 {
 public:
+    
     typedef CharType char_type;
+
+    streambuf_base()
+    {
+    }
+
     void foo(char_type ch)
     {
         std::cout << "streambuf_base::foo is called\n";
@@ -20,6 +26,10 @@ class streambuf_impl : public streambuf_base<CharType, streambuf_impl<CharType> 
 public:
     typedef typename streambuf_base<CharType, streambuf_impl<CharType>>::char_type char_type;
 
+    streambuf_impl() : streambuf_base<CharType, streambuf_impl<CharType> >()
+    {
+        std::cout << "streambuf_impl() \n";
+    }
     void foo(char_type ch)
     {
         std::cout << ch << std::endl;
@@ -30,12 +40,9 @@ template<typename CharType>
 class specific_streambuf : public streambuf_base<CharType, streambuf_impl<CharType> >
 {
 public:
-};
-
-template<typename CharType>
-class specific_streambuf1 : public streambuf_impl<CharType>
-{
-public:
+    specific_streambuf() : streambuf_base<CharType, streambuf_impl<CharType> >()
+    {
+    }
 };
 
 template<typename Buff>
@@ -55,16 +62,16 @@ private:
 };
 
 int main()
-{
+{   
     char a = 'b';
-    streambuf_base<char, streambuf_impl<char>> buf;
-    buf.foo(a);
+    //streambuf_base<char, streambuf_impl<unsigned char>> buf;
+    //buf.foo(a);
 
     specific_streambuf<char> spbuf;
     spbuf.foo(a);
 
-    specific_streambuf1<char> spbuf1;
-    spbuf1.foo(a);
+    //specific_streambuf1<char> spbuf1;
+    //spbuf1.foo(a);
 
     async_istream<specific_streambuf<char> > s(&spbuf);
     char b[10];

@@ -133,20 +133,19 @@ namespace streams
     };
 
     // Forward declarations
-    template<typename BufferImpl> class async_istream;
-    template<typename BufferImpl> class async_ostream;
+    template<typename BuffImpl> class async_istream;
+    template<typename BuffImpl> class async_ostream;
 
 
     /// Asynchronous stream buffer base class.
-    //// Impl is the actual buffer internal implementation.
-    template<typename Impl>
+    /// CharType is the data type of the basic element of the async_streambuf
+    /// and Impl is the actual buffer internal implementation.
+    template<typename CharType, typename Impl>
     class async_streambuf
     {
     public:
-        // char_type is the data type of the basic element of the async_streambuf
-        typedef typename Impl::char_type char_type;
-
-        typedef snode::streams::char_traits<char_type> traits;
+        typedef CharType char_type;
+        typedef streams::char_traits<CharType> traits;
         typedef typename traits::int_type int_type;
         typedef typename traits::pos_type pos_type;
         typedef typename traits::off_type off_type;
@@ -580,15 +579,13 @@ namespace streams
 
     /// Base class for all asynchronous output streams.
     /// Perform stream associated write operations.
-    /// Template argument BuffImpl is the implementation of the stream buffer associated with the stream.
-    template<typename BuffImpl>
+    /// Template argument T is the stream buffer type associated with the stream.
+    template<typename T>
     class async_ostream
     {
     public:
-        // char_type is the data type of the basic element of the async_streambuf
-        typedef typename BuffImpl::char_type char_type;
-
-        typedef typename snode::streams::async_streambuf<BuffImpl> streambuf_type;
+        typedef T streambuf_type;
+        typedef typename streambuf_type::char_type char_type;
         typedef typename streambuf_type::traits traits;
         typedef typename streambuf_type::int_type int_type;
         typedef typename streambuf_type::pos_type pos_type;
@@ -611,13 +608,13 @@ namespace streams
             streambuf_write_handler(CompletionHandler handler) : handler_(handler)
             {}
 
-            template<typename SourceBuffImpl>
-            void on_write(size_t count, async_streambuf<SourceBuffImpl>* source)
+            template<typename TBuf>
+            void on_write(size_t count, TBuf* sourcebuf)
             {
                 char_type* data;
-                source->acquire(data, count);
+                sourcebuf->acquire(data, count);
                 if (data != nullptr)
-                    source->release(data, count);
+                    sourcebuf->release(data, count);
                 // execute user's completion handler
                 handler_(count);
             }
@@ -635,7 +632,7 @@ namespace streams
             streambuf_read_handler(CompletionHandler handler) : handler_(handler)
             {}
 
-            void on_read(size_t count, async_ostream<BuffImpl>* ostream, std::shared_ptr<char_type> buf)
+            void on_read(size_t count, async_ostream<streambuf_type>* ostream, std::shared_ptr<char_type> buf)
             {
                 if (count)
                 {
@@ -650,7 +647,7 @@ namespace streams
                     else if (buf)
                     {
                         ostream->streambuf()->putn(buf.get(), count,
-                                std::bind(&streambuf_read_handler<CompletionHandler>::on_write, *this, count, buf));
+                            std::bind(&streambuf_read_handler<CompletionHandler>::on_write, *this, count, buf));
                     }
                 }
             }
@@ -665,7 +662,7 @@ namespace streams
         };
 
         /// stream buffer object associated with this stream
-        async_streambuf<BuffImpl>* buffer_;
+        streambuf_type* buffer_;
 
     public:
 
@@ -674,18 +671,18 @@ namespace streams
         {}
 
         /// Copy constructor
-        async_ostream(const async_ostream<BuffImpl>& other) : buffer_(other.buffer_)
+        async_ostream(const async_ostream<T>& other) : buffer_(other.buffer_)
         {}
 
         /// Assignment operator
-        async_ostream& operator =(const async_ostream<BuffImpl>& other)
+        async_ostream& operator =(const async_ostream<T>& other)
         {
             buffer_ = other.buffer_;
             return *this;
         }
 
         /// Constructor
-        async_ostream(async_streambuf<BuffImpl>* buffer) : buffer_(buffer)
+        async_ostream(T* buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_out_streambuf_msg);
         }
@@ -708,15 +705,15 @@ namespace streams
             buffer_->putc(ch, handler);
         }
 
-        /// Write a number (count) of characters from a given stream buffer (source) into the stream.
+        /// Write a number (count) of characters from a given stream buffer (sourcebuf) into the stream.
         /// (handler) is the handler to be called when the write operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the byte count written or 0 if the write operation failed.
-        template<typename WriteHandler, typename BufferImpl>
-        void write(async_streambuf<BufferImpl>& source, size_t count, WriteHandler handler)
+        template<typename WriteHandler, typename TBuf>
+        void write(TBuf& sourcebuf, size_t count, WriteHandler handler)
         {
             verify_and_throw(utils::s_out_streambuf_msg);
-            if ( !source.can_read() )
+            if ( !sourcebuf.can_read() )
                 throw std::runtime_error("source buffer not set up for input of data");
 
             if (count == 0)
@@ -726,29 +723,29 @@ namespace streams
             if ( data != nullptr )
             {
                 streambuf_read_handler<WriteHandler> completion_handler(handler);
-                source.getn(data, count,
-                        std::bind(&streambuf_read_handler<WriteHandler>::on_read, completion_handler, std::placeholders::_1, this, nullptr));
+                sourcebuf.getn(data, count,
+                    std::bind(&streambuf_read_handler<WriteHandler>::on_read, completion_handler, std::placeholders::_1, this, nullptr));
             }
             else
             {
                 size_t available = 0;
-                const bool acquired = source.acquire(data, available);
+                const bool acquired = sourcebuf.acquire(data, available);
                 if ( available >= count )
                 {
                     streambuf_write_handler<WriteHandler> completion_handler(handler);
                     buffer_->putn(data, count,
-                            std::bind(&streambuf_write_handler<WriteHandler>::on_write, completion_handler, std::placeholders::_1, source));
+                        std::bind(&streambuf_write_handler<WriteHandler>::on_write, completion_handler, std::placeholders::_1, sourcebuf));
                 }
                 else
                 {
                     // Always have to release if acquire returned true.
                     if (acquired)
-                        source.release(data, 0);
+                        sourcebuf.release(data, 0);
 
                     auto buf = std::make_shared<char_type>((size_t)count);
                     streambuf_read_handler<WriteHandler> completion_handler(handler);
-                    source.getn(buf.get(), count,
-                            std::bind(&streambuf_read_handler<WriteHandler>::on_read, completion_handler, std::placeholders::_1, this, buf));
+                    sourcebuf.getn(buf.get(), count,
+                        std::bind(&streambuf_read_handler<WriteHandler>::on_read, completion_handler, std::placeholders::_1, this, buf));
                 }
             }
         }
@@ -843,15 +840,13 @@ namespace streams
 
     /// Base class for all asynchronous input streams.
     /// Perform stream associated read operations.
-    /// Template argument BuffImpl is the implementation of the stream buffer associated with the stream.
-    template<typename BuffImpl>
+    /// Template argument T is the type of the stream buffer associated with the stream.
+    template<typename T>
     class async_istream
     {
     public:
-        // char_type is the data type of the basic element of the async_streambuf
-        typedef typename BuffImpl::char_type char_type;
-
-        typedef typename snode::streams::async_streambuf<BuffImpl> streambuf_type;
+        typedef T streambuf_type;
+        typedef typename streambuf_type::char_type char_type;
         typedef typename streambuf_type::traits traits;
         typedef typename streambuf_type::int_type int_type;
         typedef typename streambuf_type::pos_type pos_type;
@@ -878,7 +873,7 @@ namespace streams
         };
 
         /// stream buffer object associated with this stream
-        async_streambuf<BuffImpl>* buffer_;
+        streambuf_type* buffer_;
 
         /// async_istream's write completion handler to be executed
         /// when a write operation on a target buffer is complete.
@@ -890,7 +885,7 @@ namespace streams
             streambuf_write_handler(CompletionHandler handler) : handler_(handler)
             {}
 
-            void on_write(size_t count, async_istream<BuffImpl>* istream)
+            void on_write(size_t count, async_istream<T>* istream)
             {
                 char_type* data;
                 istream->streambuf().acquire(data, count);
@@ -904,14 +899,14 @@ namespace streams
         };
 
         /// async_istream's read completion handler to be executed when a read operation on the underlying buffer is complete.
-        /// Template parameter TargetBuffImpl is the (target) destination buffer implementation where data will be stored.
+        /// Template parameter TBuf is the type of the (targetbuf) destination buffer where data will be stored.
         /// Template parameter CompletionHandler is the user supplied (handler) to be executed
         /// when read() to the async_istream object is complete.
-        template<typename CompletionHandler, typename TargetBuffImpl>
+        template<typename CompletionHandler, typename TBuf>
         struct streambuf_read_handler
         {
-            streambuf_read_handler(CompletionHandler handler, async_streambuf<TargetBuffImpl>& target)
-             : handler_(handler), target_(&target)
+            streambuf_read_handler(CompletionHandler handler, TBuf& targetbuf)
+             : handler_(handler), targetbuf_(&targetbuf)
             {}
 
             void on_read(size_t count, std::shared_ptr<char_type> buf)
@@ -919,17 +914,17 @@ namespace streams
                 if (count)
                 {
                     char_type* data;
-                    bool acquired = target_->acquire(data, count);
+                    bool acquired = targetbuf_->acquire(data, count);
                     // data is already written to target, just committing.
                     if (acquired)
                     {
-                        target_->commit(count);
+                        targetbuf_->commit(count);
                         handler_(count);
                     }
                     else if (buf)
                     {
-                        target_->putn(buf.get(), count,
-                          std::bind(&streambuf_read_handler<CompletionHandler, TargetBuffImpl>::on_write, *this, count, buf));
+                        targetbuf_->putn(buf.get(), count,
+                          std::bind(&streambuf_read_handler<CompletionHandler, TBuf>::on_write, *this, count, buf));
                     }
                 }
             }
@@ -943,47 +938,47 @@ namespace streams
             // user supplied completion handler
             CompletionHandler handler_;
             // destination buffer
-            async_streambuf<TargetBuffImpl>* target_;
+            TBuf* targetbuf_;
         };
 
         /// read_to_delim() internal implementation, encapsulates all asynchronous logic and streambuf function calls
         /// performed in the background.
-        /// Template parameter TargetBuffImpl is the (target) destination buffer implementation where data will be stored.
+        /// Template parameter TBuf is the (targetbuf) destination buffer where data will be stored.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
-        template<typename CompletionHandler, typename TargetBuffImpl>
+        template<typename CompletionHandler, typename TBuf>
         struct delim_read_impl
         {
             delim_read_impl(CompletionHandler handler,
-                            async_streambuf<BuffImpl>& source,
-                            async_streambuf<TargetBuffImpl>& target)
+                            streambuf_type& sourcebuf,
+                            TBuf& targetbuf)
               : eof_or_delim_(false), handler_(handler), helper_(std::make_shared<read_helper>()),
-                source_(&source), target_(&target)
+                sourcebuf_(&source), targetbuf_(&target)
             {}
 
             void read_to_delim(int_type delim)
             {
-                if (!source_->in_avail())
+                if (!sourcebuf_->in_avail())
                 {
-                    source_->bumpc(std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1, delim));
+                    sourcebuf_->bumpc(std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1, delim));
                 }
                 else
                 {
                     int_type req_async = traits::requires_async();
 
-                    while (source_->in_avail() > 0)
+                    while (sourcebuf_->in_avail() > 0)
                     {
-                        int_type ch = source_->sbumpc();
+                        int_type ch = sourcebuf_->sbumpc();
                         if (ch == req_async)
                         {
-                            source_->bumpc(std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1, delim));
+                            sourcebuf_->bumpc(std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1, delim));
                             break;
                         }
 
                         if (ch == traits::eof() || ch == delim)
                         {
                             eof_or_delim_ = true;
-                            target_->putn(helper_->outbuf, helper_->write_pos,
+                            targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                               std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1, delim));
                             break;
                         }
@@ -993,7 +988,7 @@ namespace streams
 
                         if (helper_->is_full())
                         {
-                            target_->putn(helper_->outbuf, helper_->write_pos,
+                            targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                               std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1, delim));
                             break;
                         }
@@ -1006,7 +1001,7 @@ namespace streams
                 if (ch == traits::eof() || ch == delim)
                 {
                     eof_or_delim_ = true;
-                    target_->putn(helper_->outbuf, helper_->write_pos,
+                    targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                       std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1, delim));
                 }
                 else
@@ -1016,7 +1011,7 @@ namespace streams
 
                     if (helper_->is_full())
                     {
-                        target_->putn(helper_->outbuf, helper_->write_pos,
+                        targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                           std::bind(&delim_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1, delim));
                     }
                     else
@@ -1033,7 +1028,7 @@ namespace streams
                     // flush to target buffer
                     helper_->total += count;
                     helper_->write_pos = 0;
-                    target_->sync();
+                    targetbuf_->sync();
 
                     if (eof_or_delim_)
                         handler_(count);
@@ -1051,49 +1046,49 @@ namespace streams
             CompletionHandler handler_;
             std::shared_ptr<read_helper> helper_;
             // source buffer
-            async_streambuf<BuffImpl>* source_;
+            streambuf_type* sourcebuf_;
             // destination buffer
-            async_streambuf<TargetBuffImpl>* target_;
+            TBuf* targetbuf_;
         };
 
         /// read_line() internal implementation, encapsulates all the asynchronous logic and streambuf function calls
         /// performed in the background.
-        /// Template parameter TargetBuffImpl is the (target) destination buffer implementation where data will be stored.
+        /// Template parameter TBuf is the (targetbuf) destination buffer where data will be stored.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
-        template<typename CompletionHandler, typename TargetBuffImpl>
+        template<typename CompletionHandler, typename TBuf>
         struct line_read_impl
         {
             line_read_impl(CompletionHandler handler,
-                           async_streambuf<BuffImpl>& source,
-                           async_streambuf<TargetBuffImpl>& target)
+                           streambuf_type& sourcebuf,
+                           TBuf& targetbuf)
                 : eof_or_crlf_(false), handler_(handler), helper_(std::make_shared<read_helper>()),
-                  source_(&source), target_(&target)
+                  sourcebuf_(&source), targetbuf_(&target)
             {}
 
             void read_line()
             {
-                if (!source_->in_avail())
+                if (!sourcebuf_->in_avail())
                 {
-                    source_->bumpc(std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
+                    sourcebuf_->bumpc(std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
                 }
                 else
                 {
                     int_type req_async = traits::requires_async();
 
-                    while (source_->in_avail() > 0)
+                    while (sourcebuf_->in_avail() > 0)
                     {
-                        int_type ch = source_->sbumpc();
+                        int_type ch = sourcebuf_->sbumpc();
                         if (ch == req_async)
                         {
-                            source_->bumpc(std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
+                            sourcebuf_->bumpc(std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
                             break;
                         }
 
                         if (traits::eof() == ch)
                         {
                             eof_or_crlf_ = true;
-                            target_->putn(helper_->outbuf, helper_->write_pos,
+                            targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                               std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
                             break;
                         }
@@ -1109,7 +1104,7 @@ namespace streams
 
                             if (helper_->is_full())
                             {
-                                target_->putn(helper_->outbuf, helper_->write_pos,
+                                targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                                   std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
                                 break;
                             }
@@ -1123,7 +1118,7 @@ namespace streams
                 if (ch == traits::eof())
                 {
                     eof_or_crlf_ = true;
-                    target_->putn(helper_->outbuf, helper_->write_pos,
+                    targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                       std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
                 }
                 else
@@ -1139,7 +1134,7 @@ namespace streams
 
                         if (helper_->is_full())
                         {
-                            target_->putn(helper_->outbuf, helper_->write_pos,
+                            targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                               std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
                         }
                         else
@@ -1157,7 +1152,7 @@ namespace streams
                     // flush to target buffer
                     helper_->total += count;
                     helper_->write_pos = 0;
-                    target_->sync();
+                    targetbuf_->sync();
 
                     if (eof_or_crlf_)
                         handler_(count);
@@ -1172,12 +1167,12 @@ namespace streams
 
             void update_after_cr()
             {
-                int_type ch = source_->sgetc();
+                int_type ch = sourcebuf_->sgetc();
                 if (ch == '\n')
-                    source_->sbumpc();
+                    sourcebuf_->sbumpc();
 
                 eof_or_crlf_ = true;
-                target_->putn(helper_->outbuf, helper_->write_pos,
+                targetbuf_->putn(helper_->outbuf, helper_->write_pos,
                   std::bind(&line_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
             }
 
@@ -1186,27 +1181,27 @@ namespace streams
             CompletionHandler handler_;
             std::shared_ptr<read_helper> helper_;
             // source buffer
-            async_streambuf<BuffImpl>* source_;
+            streambuf_type* sourcebuf_;
             // destination buffer
-            async_streambuf<TargetBuffImpl>* target_;
+            TBuf* targetbuf_;
         };
 
         /// read_to_end() internal implementation, encapsulates all asynchronous logic and streambuf function calls
         /// performed in the background.
-        /// Template parameter TargetBuffImpl is the (target) destination buffer implementation where data will be stored.
+        /// Template parameter TBuf is the (targetbuf) destination buffer where data will be stored.
         /// Template parameter CompletionHandler is the user supplied handler to be executed
         /// when the operation is complete.
-        template<typename CompletionHandler, typename TargetBuffImpl>
+        template<typename CompletionHandler, typename TBuf>
         struct end_read_impl
         {
-            end_read_impl(CompletionHandler handler, async_streambuf<BuffImpl>& source,
-                          async_streambuf<TargetBuffImpl>& target)
-                : handler_(handler), helper_(std::make_shared<read_helper>()), source_(&source), target_(&target)
+            end_read_impl(CompletionHandler handler, streambuf_type& sourcebuf,
+                          TBuf& targetbuf)
+                : handler_(handler), helper_(std::make_shared<read_helper>()), sourcebuf_(&sourcebuf), targetbuf_(&targetbuf)
             {}
 
             void read_to_end()
             {
-                source_->getn(helper_->outbuf, buf_size_,
+                sourcebuf_->getn(helper_->outbuf, buf_size_,
                   std::bind(&end_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
             }
 
@@ -1214,7 +1209,7 @@ namespace streams
             {
                 if (count)
                 {
-                    target_->putn(helper_->outbuf, count,
+                    targetbuf_->putn(helper_->outbuf, count,
                       std::bind(&end_read_impl<CompletionHandler, TargetBuffImpl>::on_write, *this, std::placeholders::_1));
                 }
                 else
@@ -1229,8 +1224,8 @@ namespace streams
                 {
                     // flush to target buffer
                     helper_->total += count;
-                    target_->sync();
-                    source_->getn(helper_->outbuf, buf_size_,
+                    targetbuf_->sync();
+                    sourcebuf_->getn(helper_->outbuf, buf_size_,
                       std::bind(&end_read_impl<CompletionHandler, TargetBuffImpl>::on_read, *this, std::placeholders::_1));
                 }
                 else
@@ -1243,9 +1238,9 @@ namespace streams
             CompletionHandler handler_;
             std::shared_ptr<read_helper> helper_;
             // source buffer
-            async_streambuf<BuffImpl>* source_;
+            streambuf_type* sourcebuf_;
             // destination buffer
-            async_streambuf<TargetBuffImpl>* target_;
+            TBuf* targetbuf_;
         };
 
     public:
@@ -1254,7 +1249,7 @@ namespace streams
         {}
 
         /// Constructor
-        async_istream(async_streambuf<BuffImpl>* buffer) : buffer_(buffer)
+        async_istream(T* buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
         }
@@ -1294,12 +1289,12 @@ namespace streams
             return buffer_->bumpc(handler);
         }
 
-        /// Reads up to (count) characters and place them into the provided buffer (target).
+        /// Reads up to (count) characters and place them into the provided buffer (targetbuf).
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the byte count read or 0 if the read operation failed.
-        template<typename ReadHandler, typename TargetBuffImpl>
-        void read(async_streambuf<TargetBuffImpl>& target, size_t count, ReadHandler handler)
+        template<typename ReadHandler, typename TBuf>
+        void read(TBuf& targetbuf, size_t count, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
             if ( !target.can_write() )
@@ -1308,12 +1303,12 @@ namespace streams
             if (count == 0)
                 return;
 
-            auto data = target.alloc(count);
+            auto data = targetbuf.alloc(count);
             if ( data != nullptr )
             {
-                streambuf_read_handler<ReadHandler, TargetBuffImpl> completion_handler(handler, target);
+                streambuf_read_handler<ReadHandler, TBuf> completion_handler(handler, targetbuf);
                 buffer_->getn(data, count,
-                  std::bind(&streambuf_read_handler<ReadHandler, TargetBuffImpl>::on_read, completion_handler, std::placeholders::_1, nullptr));
+                  std::bind(&streambuf_read_handler<ReadHandler, TBuf>::on_read, completion_handler, std::placeholders::_1, nullptr));
             }
             else
             {
@@ -1322,7 +1317,7 @@ namespace streams
                 if (available >= count)
                 {
                     streambuf_write_handler<ReadHandler> completion_handler(handler);
-                    target.putn(data, count,
+                    targetbuf.putn(data, count,
                       std::bind(&streambuf_write_handler<ReadHandler>::on_write, completion_handler, std::placeholders::_1, this));
                 }
                 else
@@ -1332,9 +1327,9 @@ namespace streams
                         buffer_->release(data, 0);
 
                     auto buf = std::make_shared<char_type>((size_t)count);
-                    streambuf_read_handler<ReadHandler, TargetBuffImpl> completion_handler(handler, target);
+                    streambuf_read_handler<ReadHandler, TBuf> completion_handler(handler, targetbuf);
                     buffer_->getn(buf.get(), count,
-                      std::bind(&streambuf_read_handler<ReadHandler, TargetBuffImpl>::on_read, completion_handler, std::placeholders::_1, buf));
+                      std::bind(&streambuf_read_handler<ReadHandler, TBuf>::on_read, completion_handler, std::placeholders::_1, buf));
                 }
             }
         }
@@ -1350,50 +1345,50 @@ namespace streams
             buffer_->getc(handler);
         }
 
-        /// Read characters until a delimiter (delim) or EOF is found, and place them into the target buffer (target).
+        /// Read characters until a delimiter (delim) or EOF is found, and place them into the target buffer (targetbuf).
         /// Proceed past the delimiter, but don't include it in the target buffer.
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
-        template<typename ReadHandler, typename TargetBuffImpl>
-        void read_to_delim(async_streambuf<TargetBuffImpl>& target, int_type delim, ReadHandler handler)
+        template<typename ReadHandler, typename TBuf>
+        void read_to_delim(TBuf& targetbuf, int_type delim, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
-            if ( !target.can_write() )
+            if ( !targetbuf.can_write() )
                 throw std::runtime_error("target not set up for output of data");
 
-            delim_read_impl<ReadHandler, TargetBuffImpl> impl(handler, this->streambuf(), target);
+            delim_read_impl<ReadHandler, TBuf> impl(handler, this->streambuf(), targetbuf);
             impl.read_to_delim(delim);
         }
 
-        /// Read until reaching a newline character. The newline is not included in the (target) an asynchronous stream buffer supporting write operations.
+        /// Read until reaching a newline character. The newline is not included in the (targetbuf) an asynchronous stream buffer supporting write operations.
         /// (handler) is the handler to be called when the read operation completes.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
-        template<typename ReadHandler, typename TargetBuffImpl>
-        void read_line(streams::async_streambuf<TargetBuffImpl>& target, ReadHandler handler)
+        template<typename ReadHandler, typename TBuf>
+        void read_line(TBuf& target, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
-            if ( !target.can_write() )
+            if ( !targetbuf.can_write() )
                 throw std::runtime_error("target not set up for receiving data");
 
-            line_read_impl<ReadHandler, TargetBuffImpl> impl(handler, this->streambuf(), target);
+            line_read_impl<ReadHandler, TBuf> impl(handler, this->streambuf(), targetbuf);
             impl.read_line();
         }
 
         /// Read until reaching the end of the stream.
-        /// Parameter (target) is an asynchronous stream buffer supporting write operations.
+        /// Parameter (targetbuf) is an asynchronous stream buffer supporting write operations.
         /// (handler) is executed with the number of characters read as input parameter to the post function.
         /// Copies will be made of the handler as required. The function signature of the handler must be:
         /// void handler(size_t count) where count is the character count read or 0 if the end of the stream is reached.
-        template<typename ReadHandler, typename TargetBuffImpl>
-        void read_to_end(async_streambuf<TargetBuffImpl>& target, ReadHandler handler)
+        template<typename ReadHandler, typename TBuf>
+        void read_to_end(TBuf& target, ReadHandler handler)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
-            if ( !target.can_write() )
+            if ( !targetbuf.can_write() )
                 throw std::runtime_error("target not set up for receiving data");
 
-            end_read_impl<ReadHandler, TargetBuffImpl> impl(handler, this->streambuf(), target);
+            end_read_impl<ReadHandler, TBuf> impl(handler, this->streambuf(), targetbuf);
             impl.read_to_end();
         }
 
@@ -1435,7 +1430,7 @@ namespace streams
         bool is_open() const { return is_valid() && buffer_->can_read(); }
 
         /// Get the underlying stream buffer.
-        snode::streams::async_streambuf<BuffImpl>& streambuf() const
+        streambuf_type& streambuf() const
         {
             return *buffer_;
         }

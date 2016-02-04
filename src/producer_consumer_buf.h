@@ -21,10 +21,12 @@ namespace snode
 /// Library for asynchronous streams.
 namespace streams
 {
-    /// The producer_consumer_buffer class serves as a memory-based stream buffer that supports both writing
+    template <typename CharType> class producer_consumer_buffer;
+
+    /// Serves as a memory-based stream buffer that supports both writing
     /// and reading sequences of characters at the same time. It can be used as a consumer/producer buffer.
     template<typename CharType>
-    class producer_consumer_buffer : public async_streambuf<producer_consumer_buffer<CharType> >
+    class producer_consumer_buffer_base : public async_streambuf<producer_consumer_buffer_base<CharType> >
     {
     public:
         typedef CharType char_type;
@@ -34,8 +36,9 @@ namespace streams
         typedef typename producer_consumer_buffer::int_type int_type;
         typedef typename producer_consumer_buffer::off_type off_type;
 
+    protected:
         /// Default constructor accepts allocation size in bytes for the internal memory blocks.
-        producer_consumer_buffer(size_t alloc_size = 512) : base_streambuf_type(std::ios_base::out | std::ios_base::in),
+        producer_consumer_buffer_base(size_t alloc_size) : base_streambuf_type(std::ios_base::out | std::ios_base::in),
             alloc_size_(alloc_size),
             allocblock_(nullptr),
             total_(0), total_read_(0), total_written_(0),
@@ -291,7 +294,7 @@ namespace streams
         }
 
     private:
-
+        template<typename CharType> friend class producer_consumer_buffer;
         /// Represents a memory block
         class mem_block
         {
@@ -461,7 +464,8 @@ namespace streams
         /// Writes count characters from ptr into the stream buffer
         size_t write_locked(const char_type* ptr, size_t count)
         {
-            lib::lock_guard<lib::recursive_mutex> lockg(mutex_);
+            // disabled for now            
+            // lib::lock_guard<lib::recursive_mutex> lockg(mutex_);
             return this->write(ptr, count);
         }
 
@@ -596,7 +600,20 @@ namespace streams
         std::queue<ev_request> requests_;
 
         // global lock in case of using the write_locked and read_locked functions
-        lib::recursive_mutex mutex_;
+        // lib::recursive_mutex mutex_;
+    };
+
+    template<typename CharType>
+    class producer_consumer_buffer : public async_streambuf<producer_consumer_buffer_base<CharType> >
+    {
+        typedef async_streambuf<producer_consumer_buffer_base> base_streambuf_type;
+    public:
+    
+        /// Default constructor accepts allocation size in bytes for the internal memory blocks.
+        producer_consumer_buffer(size_t alloc_size = 512) : base_streambuf_type(std::ios_base::out | std::ios_base::in),
+        {
+            get_impl()->alloc_size_ = alloc_size;
+        }
     };
 
 }} // namespaces
