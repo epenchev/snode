@@ -143,7 +143,7 @@ class http_msg_base
 {
 public:
 
-    typedef streams::async_streambuf<streams::producer_consumer_buffer<uint8_t>> streambuf_type;
+    typedef streams::async_streambuf<uint8_t, streams::producer_consumer_buffer<uint8_t> > streambuf_type;
     typedef typename streambuf_type::istream_type istream_type;
     typedef typename streambuf_type::ostream_type ostream_type;
 

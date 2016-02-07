@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cstdint>
+#include <memory>
 
 template<typename CharType, typename Impl>
 class streambuf_base
@@ -11,6 +12,7 @@ public:
 
     streambuf_base()
     {
+        std::cout << "streambuf_base() \n";
     }
 
     void foo(char_type ch)
@@ -26,6 +28,11 @@ class streambuf_impl : public streambuf_base<CharType, streambuf_impl<CharType> 
 public:
     typedef typename streambuf_base<CharType, streambuf_impl<CharType>>::char_type char_type;
 
+    static streambuf_base<CharType, streambuf_impl<CharType>>* create_streambuf_impl()
+    {
+        return new streambuf_impl<CharType>();
+    }
+
     streambuf_impl() : streambuf_base<CharType, streambuf_impl<CharType> >()
     {
         std::cout << "streambuf_impl() \n";
@@ -40,9 +47,6 @@ template<typename CharType>
 class specific_streambuf : public streambuf_base<CharType, streambuf_impl<CharType> >
 {
 public:
-    specific_streambuf() : streambuf_base<CharType, streambuf_impl<CharType> >()
-    {
-    }
 };
 
 template<typename Buff>
@@ -61,21 +65,52 @@ private:
     Buff* buffer_;
 };
 
+template<typename CharType>
+streambuf_base<CharType, streambuf_impl<CharType>>* create_streambuf_impl()
+{
+    return new streambuf_impl<CharType>();
+}
+
+template<typename T>
+class sample
+{
+public:
+    template<typename TVar>
+    void do_something(TVar var)
+    {
+        std::cout << sizeof(var) << std::endl;
+    }
+
+    void do_size(T var)
+    {
+        std::cout << sizeof(var) << std::endl;
+    }
+};
+
 int main()
-{   
-    char a = 'b';
-    //streambuf_base<char, streambuf_impl<unsigned char>> buf;
-    //buf.foo(a);
+{
+    //char a = 'b';
+    std::string w("юююююю");
+    std::cout << w << std::endl;
+    std::cout << w.length() << std::endl;
+    std::cout << w[0] << w[1] << std::endl;
+    unsigned int w0 = w[0];
+    unsigned int w1 = w[1];
+    std::cout << (w0 & 0xff) << std::endl;
+    std::cout << (w1 & 0xff) << std::endl;
+ 
+    //auto sbuf = create_streambuf_impl<char>();
+    //auto sbuf = streambuf_impl<char>::create_streambuf_impl();
+    //sbuf->foo(a);
 
-    specific_streambuf<char> spbuf;
-    spbuf.foo(a);
-
-    //specific_streambuf1<char> spbuf1;
-    //spbuf1.foo(a);
-
+    /*
     async_istream<specific_streambuf<char> > s(&spbuf);
     char b[10];
     s.read(b, 10);
+    */
+
+    sample<char> sm;
+       
 
     return 0;
 }
