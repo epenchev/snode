@@ -15,18 +15,20 @@ namespace streams
 
 /// The sourcebuf class serves as a memory-based stream buffer that supports only reading,
 /// sequences of characters can be read from a arbitrary static (data is a constant) source object that complies with SourceImpl interface.
-/// SourceImpl can be anything not depending from the medium (file, memory, network storage ..)
-template<typename SourceImpl>
-class sourcebuf : public async_streambuf<sourcebuf<SourceImpl> >
+/// TImpl can be anything not depending from the medium (file, memory, network storage ..)
+template<typename TImpl>
+class sourcebuf : public async_streambuf<typename TImpl::value_type, sourcebuf<TImpl> >
 {
-private:
-    SourceImpl& source_;
-    typedef typename SourceImpl::char_type char_type;
-    typedef async_streambuf<sourcebuf<SourceImpl> > base_streambuf_type;
+public:
+    typedef typename TImpl::value_type char_type;    
+    typedef async_streambuf<char_type, sourcebuf<TImpl> > base_streambuf_type;
     typedef typename sourcebuf::traits traits;
     typedef typename sourcebuf::pos_type pos_type;
     typedef typename sourcebuf::int_type int_type;
     typedef typename sourcebuf::off_type off_type;
+
+private:
+    TImpl& source_;
 
     // internal buffered data from source
     struct buffer_info
@@ -47,11 +49,11 @@ private:
     };
 
     /// container used for async operations
-    template<typename Handler>
+    template<typename THandler>
     struct read_op
     {
     public:
-        read_op(sourcebuf<SourceImpl>& buf, Handler h) : handler_(h), buf_(buf)
+        read_op(sourcebuf<TImpl>& buf, THandler h) : handler_(h), buf_(buf)
         {}
 
         void read(char_type* ptr, size_t count, bool advance = true)
@@ -66,11 +68,11 @@ private:
             handler_(chr);
         }
     private:
-        Handler handler_;
-        sourcebuf<SourceImpl>& buf_;
+        THandler handler_;
+        sourcebuf<TImpl>& buf_;
     };
 
-    template<typename Handler> friend class read_op;
+    template<typename THandler> friend class read_op;
     buffer_info info_;
 
     /// Fills buffer with data (count characters) from the source.
@@ -177,7 +179,7 @@ private:
     }
 
 public:
-    sourcebuf(SourceImpl& source) : base_streambuf_type(std::ios_base::in), source_(source), info_(512)
+    sourcebuf(TImpl& source) : base_streambuf_type(std::ios_base::in), source_(source), info_(512)
     {}
 
     ~sourcebuf()
@@ -227,11 +229,11 @@ public:
 
     /// Reads up to a given number characters from the stream buffer from memory.
     /// For details see async_streambuf::getn()
-    template<typename ReadHandler>
-    void getn(char_type* ptr, size_t count, ReadHandler handler)
+    template<typename THandler>
+    void getn(char_type* ptr, size_t count, THandler handler)
     {
-        read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read, op, ptr, count);
+        read_op<THandler> op(*this, handler);
+        async_task::connect(&read_op<THandler>::read, op, ptr, count);
     }
 
     /// Copies up to a given number characters from the stream buffer to memory synchronously.
@@ -243,11 +245,11 @@ public:
 
     /// Reads a single character from the stream and advances the read position.
     /// For details see async_streambuf::bumpc()
-    template<typename ReadHandler>
-    void bumpc(ReadHandler handler)
+    template<typename THandler>
+    void bumpc(THandler handler)
     {
-        read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read_byte, op);
+        read_op<THandler> op(*this, handler);
+        async_task::connect(&read_op<THandler>::read_byte, op);
     }
 
     /// Reads a single character from the stream and advances the read position.
@@ -259,12 +261,12 @@ public:
 
     /// Reads a single character from the stream without advancing the read position.
     /// For details see async_streambuf::getc()
-    template<typename ReadHandler>
-    void getc(ReadHandler handler)
+    template<typename THandler>
+    void getc(THandler handler)
     {
         bool advance = false;
-        read_op<ReadHandler> op(*this, handler);
-        async_task::connect(&read_op<ReadHandler>::read_byte, op, advance);
+        read_op<THandler> op(*this, handler);
+        async_task::connect(&read_op<THandler>::read_byte, op, advance);
     }
 
     /// Reads a single character from the stream without advancing the read position.
@@ -276,8 +278,8 @@ public:
 
     /// Advances the read position, then returns the next character without advancing again.
     /// For details see async_streambuf::nextc()
-    template<typename ReadHandler>
-    void nextc(ReadHandler handler)
+    template<typename THandler>
+    void nextc(THandler handler)
     {
         auto pos = seekoff(1, std::ios_base::cur, std::ios_base::in);
         if (pos == (pos_type)traits::eof())
@@ -288,8 +290,8 @@ public:
 
     /// Retreats the read position, then returns the current character without advancing.
     /// For details see async_streambuf::ungetc()
-    template<typename ReadHandler>
-    void ungetc(ReadHandler handler)
+    template<typename THandler>
+    void ungetc(THandler handler)
     {
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
         if (pos == (pos_type)traits::eof())

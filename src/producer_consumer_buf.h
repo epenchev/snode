@@ -23,12 +23,12 @@ namespace streams
 {
     /// Serves as a memory-based stream buffer that supports both writing
     /// and reading sequences of characters at the same time. It can be used as a consumer/producer buffer.
-    template<typename CharType>
-    class producer_consumer_buffer : public async_streambuf<producer_consumer_buffer<CharType> >
+    template<typename TChar>
+    class producer_consumer_buffer : public async_streambuf<TChar, producer_consumer_buffer<TChar> >
     {
     public:
-        typedef CharType char_type;
-        typedef async_streambuf<producer_consumer_buffer> base_streambuf_type;
+        typedef TChar char_type;
+        typedef async_streambuf<TChar, producer_consumer_buffer<TChar> > base_streambuf_type;
         typedef typename producer_consumer_buffer::traits traits;
         typedef typename producer_consumer_buffer::pos_type pos_type;
         typedef typename producer_consumer_buffer::int_type int_type;
@@ -50,17 +50,17 @@ namespace streams
         }
 
         /// helper function for instance creation
-        static async_streambuf<CharType, producer_consumer_buffer<CharType> >*
+        static async_streambuf<TChar, producer_consumer_buffer<TChar> >*
         create_instance(size_t alloc_size = 512)
         {
             return new producer_consumer_buffer(alloc_size);
         }
 
         /// helper function for shared instance creation
-        static std::shared_ptr<async_streambuf<CharType, producer_consumer_buffer<CharType> > >
+        static std::shared_ptr<async_streambuf<TChar, producer_consumer_buffer<TChar> > >
         create_shared_instance(size_t alloc_size = 512)
         {
-            return std::make_shared<producer_consumer_buffer<CharType> >(alloc_size);
+            return std::make_shared<producer_consumer_buffer<TChar> >(alloc_size);
         }
 
         /// checks if stream buffer supports seeking.
@@ -177,8 +177,8 @@ namespace streams
 
         /// Writes a single character to the stream buffer.
         /// For details see async_streambuf::putc()
-        template<typename WriteHandler>
-        void putc(char_type ch, WriteHandler handler)
+        template<typename THandler>
+        void putc(char_type ch, THandler handler)
         {
             int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
             async_task::connect(handler, res);
@@ -186,8 +186,8 @@ namespace streams
 
         /// Writes a number of characters to the stream buffer from memory.
         /// For details see async_streambuf::putn()
-        template<typename WriteHandler>
-        void putn(const char_type* ptr, size_t count, WriteHandler handler)
+        template<typename THandler>
+        void putn(const char_type* ptr, size_t count, THandler handler)
         {
             size_t res = this->write(ptr, count);
             async_task::connect(handler, res);
@@ -195,11 +195,11 @@ namespace streams
 
         /// Writes a number of characters to the stream buffer from memory.
         /// For details see async_streambuf::putn_nocopy()
-        template<typename WriteHandler>
-        void putn_nocopy(const char_type* ptr, size_t count, WriteHandler handler)
+        template<typename THandler>
+        void putn_nocopy(const char_type* ptr, size_t count, THandler handler)
         {
-            typedef async_streambuf_op<char_type, WriteHandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, WriteHandler>(handler);
+            typedef async_streambuf_op<char_type, THandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             auto write_fn = [](const char_type* ptr, size_t count,
                                async_streambuf_op_base<char_type>* op, producer_consumer_buffer<char_type>* buf)
             {
@@ -211,11 +211,11 @@ namespace streams
 
         /// Reads up to a given number of characters from the stream buffer to memory.
         /// For details see async_streambuf::getn()
-        template<typename ReadHandler>
-        void getn(char_type* ptr, size_t count, ReadHandler handler)
+        template<typename THandler>
+        void getn(char_type* ptr, size_t count, THandler handler)
         {
-            typedef async_streambuf_op<char_type, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, THandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op, ptr, count));
         }
 
@@ -235,11 +235,11 @@ namespace streams
 
         /// Reads a single character from the stream and advances the read position.
         /// For details see async_streambuf::bumpc()
-        template<typename ReadHandler>
-        void bumpc(ReadHandler handler)
+        template<typename THandler>
+        void bumpc(THandler handler)
         {
-            typedef async_streambuf_op<char_type, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, THandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -252,11 +252,11 @@ namespace streams
 
         /// Reads a single character from the stream without advancing the read position.
         /// For details see async_streambuf::getc()
-        template<typename ReadHandler>
-        void getc(ReadHandler handler)
+        template<typename THandler>
+        void getc(THandler handler)
         {
-            typedef async_streambuf_op<char_type, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, THandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -269,19 +269,19 @@ namespace streams
 
         /// Advances the read position, then returns the next character without advancing again.
         /// For details see async_streambuf::nextc()
-        template<typename ReadHandler>
-        void nextc(ReadHandler handler)
+        template<typename THandler>
+        void nextc(THandler handler)
         {
             // TODO move read pointer in advance
-            typedef async_streambuf_op<char_type, ReadHandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, ReadHandler>(handler);
+            typedef async_streambuf_op<char_type, THandler> op_type;
+            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
         /// Retreats the read position, then returns the current character without advancing.
         /// For details see async_streambuf::ungetc()
-        template<typename ReadHandler>
-        void ungetc(ReadHandler handler)
+        template<typename THandler>
+        void ungetc(THandler handler)
         {
             async_task::connect(handler, static_cast<int_type>(traits::eof()));
         }
@@ -305,7 +305,6 @@ namespace streams
         }
 
     private:
-        template<typename CharType> friend class producer_consumer_buffer;
         /// Represents a memory block
         class mem_block
         {

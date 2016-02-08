@@ -22,20 +22,20 @@ namespace streams
 /// sequences of characters.
 /// A class to allow users to create input and output streams based on STL collections.
 /// The sole purpose of this class to avoid users from having to know anything about stream buffers.
-/// CollectionType - The type of the STL collection (ex. std::string, std::vector ..).
-template<typename CollectionType>
-class container_buffer : public async_streambuf<container_buffer<CollectionType> >
+/// TCollection - The type of the STL collection (ex. std::string, std::vector ..).
+template<typename TCollection>
+class container_buffer : public async_streambuf<typename TCollection::value_type, container_buffer<TCollection> >
 {
 public:
-    typedef typename CollectionType::value_type char_type;
-    typedef async_streambuf<container_buffer> base_streambuf_type;
-    typedef typename container_buffer<CollectionType>::traits traits;
-    typedef typename container_buffer<CollectionType>::int_type int_type;
-    typedef typename container_buffer<CollectionType>::pos_type pos_type;
-    typedef typename container_buffer<CollectionType>::off_type off_type;
+    typedef typename TCollection::value_type char_type;
+    typedef async_streambuf<char_type, container_buffer<TCollection> > base_streambuf_type;
+    typedef typename container_buffer<TCollection>::traits traits;
+    typedef typename container_buffer<TCollection>::int_type int_type;
+    typedef typename container_buffer<TCollection>::pos_type pos_type;
+    typedef typename container_buffer<TCollection>::off_type off_type;
 
     /// Returns the underlying data container
-    CollectionType& collection()
+    TCollection& collection()
     {
         return data_;
     }
@@ -48,7 +48,7 @@ public:
     }
 
     /// Constructor
-    container_buffer(CollectionType data, std::ios_base::openmode mode)
+    container_buffer(TCollection data, std::ios_base::openmode mode)
       : base_streambuf_type(std::ios_base::out | std::ios_base::in), data_(std::move(data)), current_position_(0)
               //current_position_((mode & std::ios_base::in) ? 0 : data_.size())
     {
@@ -111,8 +111,8 @@ public:
 
     /// Writes a single character to the stream buffer.
     /// For details see async_streambuf::putc()
-    template<typename WriteHandler>
-    void putc(char_type ch, WriteHandler handler)
+    template<typename THandler>
+    void putc(char_type ch, THandler handler)
     {
         int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
         async_task::connect(handler, res);
@@ -120,8 +120,8 @@ public:
 
     /// Writes a number of characters to the stream buffer from memory.
     /// For details see async_streambuf::putn()
-    template<typename WriteHandler>
-    void putn(char_type* ptr, size_t count, WriteHandler handler)
+    template<typename THandler>
+    void putn(char_type* ptr, size_t count, THandler handler)
     {
         size_t res = this->write(ptr, count);
         async_task::connect(handler, res);
@@ -184,8 +184,8 @@ public:
 
     /// Reads up to a given number of characters from the stream buffer to memory.
     /// For details see async_streambuf::getn()
-    template<typename ReadHandler>
-    void getn(char_type* ptr, size_t count, ReadHandler handler)
+    template<typename THandler>
+    void getn(char_type* ptr, size_t count, THandler handler)
     {
         int_type res = this->read(ptr, count);
         async_task::connect(handler, res);
@@ -207,8 +207,8 @@ public:
 
     /// Reads a single character from the stream and advances the read position.
     /// For details see async_streambuf::bumpc()
-    template<typename ReadHandler>
-    void bumpc(ReadHandler handler)
+    template<typename THandler>
+    void bumpc(THandler handler)
     {
         int_type res = this->read_byte(true);
         async_task::connect(handler, res);
@@ -223,8 +223,8 @@ public:
 
     /// Reads a single character from the stream without advancing the read position.
     /// For details see async_streambuf::getc()
-    template<typename ReadHandler>
-    void getc(ReadHandler handler)
+    template<typename THandler>
+    void getc(THandler handler)
     {
         int_type res = this->read_byte(false);
         async_task::connect(handler, res);
@@ -239,8 +239,8 @@ public:
 
     /// Advances the read position, then returns the next character without advancing again.
     /// For details see async_streambuf::nextc()
-    template<typename ReadHandler>
-    void nextc(ReadHandler handler)
+    template<typename THandler>
+    void nextc(THandler handler)
     {
         // TODO move read pointer in advance
         int_type res = this->read_byte(true);
@@ -249,8 +249,8 @@ public:
 
     /// Retreats the read position, then returns the current character without advancing.
     /// For details see async_streambuf::ungetc()
-    template<typename ReadHandler>
-    void ungetc(ReadHandler handler)
+    template<typename THandler>
+    void ungetc(THandler handler)
     {
         /*
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
@@ -456,7 +456,7 @@ private:
     }
 
     // The actual data store
-    CollectionType data_;
+    TCollection data_;
 
     // Read/write head
     size_t current_position_;
