@@ -5,8 +5,8 @@
  *      Author: emo
  */
 
-#ifndef SRC_MEDIA_MEDIA_FILTER_H_
-#define SRC_MEDIA_MEDIA_FILTER_H_
+#ifndef MEDIA_MEDIA_FILTER_H_
+#define MEDIA_MEDIA_FILTER_H_
 
 
 

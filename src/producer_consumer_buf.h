@@ -255,6 +255,7 @@ namespace streams
         template<typename THandler>
         void getc(THandler handler)
         {
+            // TODO don't move the read pointer
             typedef async_streambuf_op<char_type, THandler> op_type;
             op_type* op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op));
@@ -403,9 +404,12 @@ namespace streams
         class ev_request
         {
         public:
-            ev_request(producer_consumer_buffer<char_type>& parent, async_streambuf_op_base<char_type>* op,
-                       char_type* ptr = nullptr, size_t count = 1)
-            : count_(count), bufptr_(ptr), parent_(parent), completion_op_(op)
+            ev_request(producer_consumer_buffer<char_type>& streambuf,
+                       async_streambuf_op_base<char_type>* op,
+                       char_type* ptr = nullptr,
+                       bool advance = true, 
+                       size_t count = 1)
+            : count_(count), advance_(advance), bufptr_(ptr), streambuf_(streambuf), completion_op_(op)
             {}
 
             size_t size() const
@@ -417,12 +421,12 @@ namespace streams
             {
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
-                    size_t countread = parent_.read(bufptr_, count_);
+                    size_t countread = streambuf_.read(bufptr_, count_, advance_);
                     async_task::connect(&async_streambuf_op_base<char_type>::complete_size, completion_op_, countread);
                 }
                 else
                 {
-                    int_type value = parent_.read_byte();
+                    int_type value = streambuf_.read_byte(advance_);
                     async_task::connect(&async_streambuf_op_base<char_type>::complete_ch, completion_op_, value);
                     // This  is really a bug just take the time to make a full investigation for it TODO
                     // completion_op_->complete_ch(value);
@@ -431,8 +435,9 @@ namespace streams
 
         protected:
             size_t count_;
+            bool advance_;
             char_type* bufptr_;
-            producer_consumer_buffer<char_type>& parent_;
+            producer_consumer_buffer<char_type>& streambuf_;
             async_streambuf_op_base<char_type>* completion_op_;
         };
 

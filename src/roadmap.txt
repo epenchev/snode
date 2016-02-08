@@ -1,0 +1,24 @@
+Project's roadmap (list of tasks by priority)
+
+----- First beta release ------
+1. Clean/fix all TODO's into the streams package. (producer_consumer_buf, container_buf ...)
+2. Complete the media package (player's interface, media_filter interface and file_source implementation)
+3. Complete HTTP stack.
+4. Create a simple HTTP media streamer for POF (HTTP progressive download).
+5. Add JSON library (use Casablanca for now).
+6. Add JSON controller to snode_core. Rearrange snode_core.
+7. Create new config parser (JSON format).
+8. Rearrange project structure separate core/ streams/ media/ test/
+9. Create cmake build system for the project.
+10. Improve tests add istream ostream test and test for the different streambuf implementations.
+
+----- Second beta release -----
+1. Create simple web UI. (Use KODI's one)
+2. Improve player add ffmpeg support.
+3. Create HTTP media streamer (HTTP pseudo streaming).
+4. Add RTMP support.
+5. HTTPS support.
+
+
+
+

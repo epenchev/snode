@@ -23,7 +23,7 @@ public:
     typedef typename traits::pos_type pos_type;
     typedef typename traits::off_type off_type;
     typedef streams::async_streambuf<char_type, streams::sourcebuf<media_source> > streambuf_type;
-    typedef streams::async_istream<char_type, streams::sourcebuf<media_source> > stream_type;
+    typedef streambuf_type::istream_type stream_type;
     typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > live_streambuf_type;
     typedef streams::async_istream<char_type, streams::producer_consumer_buffer<char_type> > live_stream_type;
     typedef std::shared_ptr<streambuf_type> streambuf_type_ptr;
@@ -76,10 +76,10 @@ public:
     }
 
     /// Get media_source specific implementation
-    template<typename Impl>
-    inline Impl& get_impl()
+    template<typename TImpl>
+    inline TImpl& get_impl()
     {
-        return static_cast<media_source_impl<Impl>*>(this)->impl();
+        return static_cast<media_source_impl<TImpl>*>(this)->impl();
     }
 
     /// Factory method.
@@ -119,9 +119,9 @@ protected:
 };
 
 /// Template based implementation bridge for custom media_soure implementations.
-/// Impl template is the actual source implementation.
+/// TImpl template is the actual source implementation.
 /// A custom implementation must implement read(), close() and streambuf() method and an factory class that complies with reg_factory.
-template<typename Impl>
+template<typename TImpl>
 class media_source_impl : public media_source
 {
 public:
@@ -129,41 +129,41 @@ public:
     /// Bridge for media_source::size()
     static size_t size(media_source* base)
     {
-        media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
+        media_source_impl<TImpl>* source(static_cast<media_source_impl<TImpl>*>(base));
         return source->impl_.size();
     }
 
     /// Bridge for media_source::read()
     static void read(media_source* base, char_type* ptr, size_t count, off_type offset)
     {
-        media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
+        media_source_impl<TImpl>* source(static_cast<media_source_impl<TImpl>*>(base));
         source->impl_.read(ptr, count, offset);
     }
 
     /// Bridge for media_source::close()
     static void close(media_source* base)
     {
-        media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
+        media_source_impl<TImpl>* source(static_cast<media_source_impl<TImpl>*>(base));
         source->impl_.close();
     }
 
     /// Bridge for media_source::streambuf()
     static media_source::live_streambuf_type& streambuf(media_source* base)
     {
-        media_source_impl<Impl>* source(static_cast<media_source_impl<Impl>*>(base));
+        media_source_impl<TImpl>* source(static_cast<media_source_impl<TImpl>*>(base));
         return source->impl_.streambuf();
     }
 
-    media_source_impl(Impl& impl) : media_source(&media_source_impl::size,
+    media_source_impl(TImpl& impl) : media_source(&media_source_impl::size,
                                                  &media_source_impl::close,
                                                  &media_source_impl::read,
                                                  &media_source_impl::streambuf), impl_(impl)
     {}
 
     /// return the actual source implementation
-    Impl& impl() { return impl_; }
+    TImpl& impl() { return impl_; }
 private:
-    Impl& impl_;
+    TImpl& impl_;
 };
 
 } // end namespace media
