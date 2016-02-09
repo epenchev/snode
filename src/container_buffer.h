@@ -187,8 +187,16 @@ public:
     template<typename THandler>
     void getn(char_type* ptr, size_t count, THandler handler)
     {
-        int_type res = this->read(ptr, count);
-        async_task::connect(handler, res);
+        auto op = new async_streambuf_op<char_type, THandler>(handler);
+        auto read_fn = [](char_type* ptr,
+                          size_t count,
+                          async_streambuf_op_base<char_type>* op,
+                          container_buffer<TCollection>* buf)
+        {
+            size_t res = buf->read(ptr, count);
+            op->complete_size(res);
+        };
+        async_task::connect(read_fn, ptr, count, op, this);
     }
 
     /// Reads up to a given number of characters from the stream buffer to memory synchronously.
@@ -210,8 +218,14 @@ public:
     template<typename THandler>
     void bumpc(THandler handler)
     {
-        int_type res = this->read_byte(true);
-        async_task::connect(handler, res);
+        auto op = new async_streambuf_op<char_type, THandler>(handler);
+        auto read_fn = [](async_streambuf_op_base<char_type>* op,
+                          container_buffer<TCollection>* buf)
+        {
+            char_type res = buf->read_byte(true);
+            op->complete_ch(res);
+        };
+        async_task::connect(read_fn, op, this);
     }
 
     /// Reads a single character from the stream and advances the read position.
@@ -226,8 +240,14 @@ public:
     template<typename THandler>
     void getc(THandler handler)
     {
-        int_type res = this->read_byte(false);
-        async_task::connect(handler, res);
+        auto op = new async_streambuf_op<char_type, THandler>(handler);
+        auto read_fn = [](async_streambuf_op_base<char_type>* op,
+                          container_buffer<TCollection>* buf)
+        {
+            char_type res = buf->read_byte(false);
+            op->complete_ch(res);
+        };
+        async_task::connect(read_fn, op, this);
     }
 
     /// Reads a single character from the stream without advancing the read position.
@@ -242,9 +262,16 @@ public:
     template<typename THandler>
     void nextc(THandler handler)
     {
-        // TODO move read pointer in advance
-        int_type res = this->read_byte(true);
-        async_task::connect(handler, res);
+        auto op = new async_streambuf_op<char_type, THandler>(handler);
+        auto read_fn = [](async_streambuf_op_base<char_type>* op,
+                          container_buffer<TCollection>* buf)
+        {
+            // advance the position first then read
+            buf->read_byte(true);
+            char_type res = buf->read_byte(false);
+            op->complete_ch(res);
+        };
+        async_task::connect(read_fn, op, this);
     }
 
     /// Retreats the read position, then returns the current character without advancing.
@@ -252,12 +279,11 @@ public:
     template<typename THandler>
     void ungetc(THandler handler)
     {
-        /*
         auto pos = seekoff(-1, std::ios_base::cur, std::ios_base::in);
         if ( pos == (pos_type)traits::eof())
             async_task::connect(handler, static_cast<int_type>(traits::eof()));
-        int_type res = this->getc();
-        */
+        else
+            this->getc(handler);
     }
 
     /// Gets the current read or write position in the stream for the given direction.

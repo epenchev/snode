@@ -180,8 +180,15 @@ namespace streams
         template<typename THandler>
         void putc(char_type ch, THandler handler)
         {
-            int_type res = (this->write(&ch, 1) == 1) ? static_cast<int_type>(ch) : traits::eof();
-            async_task::connect(handler, res);
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
+            auto write_fn = [](char_type ch,
+                               async_streambuf_op_base<char_type>* op,
+                               producer_consumer_buffer<char_type>* buf)
+            {
+                int_type res = (buf->write(&ch, 1) ? static_cast<int_type>(ch) : traits::eof());
+                op->complete_ch(res);
+            };
+            async_task::connect(write_fn, ch, op, this);
         }
 
         /// Writes a number of characters to the stream buffer from memory.
@@ -189,8 +196,19 @@ namespace streams
         template<typename THandler>
         void putn(const char_type* ptr, size_t count, THandler handler)
         {
-            size_t res = this->write(ptr, count);
-            async_task::connect(handler, res);
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
+            // make a copy of the data
+            auto cpbuf = std::make_shared<std::vector<char_type> >(count);
+            std::copy(ptr, ptr + count, cpbuf->data());
+
+            auto write_fn = [](std::shared_ptr<std::vector<char_type> > cpbuf,
+                               async_streambuf_op_base<char_type>* op,
+                               producer_consumer_buffer<char_type>* buf)
+            {
+                size_t res = buf->write(cpbuf->data(), cpbuf->size());
+                op->complete_size(res);
+            };
+            async_task::connect(write_fn, cpbuf, op, this);
         }
 
         /// Writes a number of characters to the stream buffer from memory.
@@ -198,8 +216,7 @@ namespace streams
         template<typename THandler>
         void putn_nocopy(const char_type* ptr, size_t count, THandler handler)
         {
-            typedef async_streambuf_op<char_type, THandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
             auto write_fn = [](const char_type* ptr, size_t count,
                                async_streambuf_op_base<char_type>* op, producer_consumer_buffer<char_type>* buf)
             {
@@ -214,8 +231,7 @@ namespace streams
         template<typename THandler>
         void getn(char_type* ptr, size_t count, THandler handler)
         {
-            typedef async_streambuf_op<char_type, THandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op, ptr, count));
         }
 
@@ -238,8 +254,7 @@ namespace streams
         template<typename THandler>
         void bumpc(THandler handler)
         {
-            typedef async_streambuf_op<char_type, THandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
             enqueue_request(ev_request(*this, op));
         }
 
@@ -255,10 +270,8 @@ namespace streams
         template<typename THandler>
         void getc(THandler handler)
         {
-            // TODO don't move the read pointer
-            typedef async_streambuf_op<char_type, THandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
-            enqueue_request(ev_request(*this, op));
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
+            enqueue_request(ev_request(*this, op, 1, ev_request::NoAdvance));
         }
 
         /// Reads a single character from the stream without advancing the read position.
@@ -273,10 +286,8 @@ namespace streams
         template<typename THandler>
         void nextc(THandler handler)
         {
-            // TODO move read pointer in advance
-            typedef async_streambuf_op<char_type, THandler> op_type;
-            op_type* op = new async_streambuf_op<char_type, THandler>(handler);
-            enqueue_request(ev_request(*this, op));
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
+            enqueue_request(ev_request(*this, op, 1, ev_request::AdvanceBefore));
         }
 
         /// Retreats the read position, then returns the current character without advancing.
@@ -404,12 +415,14 @@ namespace streams
         class ev_request
         {
         public:
+            enum AdvanceAction { AdvanceOnce = 1, AdvanceBefore = 2, NoAdvance = 3 };
+
             ev_request(producer_consumer_buffer<char_type>& streambuf,
                        async_streambuf_op_base<char_type>* op,
                        char_type* ptr = nullptr,
-                       bool advance = true, 
-                       size_t count = 1)
-            : count_(count), advance_(advance), bufptr_(ptr), streambuf_(streambuf), completion_op_(op)
+                       size_t count = 1,
+                       AdvanceAction advance = AdvanceOnce)
+            : count_(count), advance_act_(advance), bufptr_(ptr), streambuf_(streambuf), completion_op_(op)
             {}
 
             size_t size() const
@@ -421,21 +434,29 @@ namespace streams
             {
                 if (count_ > 1 && bufptr_ != nullptr)
                 {
-                    size_t countread = streambuf_.read(bufptr_, count_, advance_);
+                    bool advance = true;
+                    if (NoAdvance == advance_act_)
+                        advance = false;
+
+                    size_t countread = streambuf_.read(bufptr_, count_, advance);
                     async_task::connect(&async_streambuf_op_base<char_type>::complete_size, completion_op_, countread);
                 }
                 else
                 {
-                    int_type value = streambuf_.read_byte(advance_);
+                    bool advance = true;
+                    if (NoAdvance == advance_act_ || AdvanceBefore == advance_act_)
+                        advance = false;
+                    if (AdvanceBefore == advance_act_)
+                        streambuf_.read_byte(true);
+
+                    int_type value = streambuf_.read_byte(advance);
                     async_task::connect(&async_streambuf_op_base<char_type>::complete_ch, completion_op_, value);
-                    // This  is really a bug just take the time to make a full investigation for it TODO
-                    // completion_op_->complete_ch(value);
                 }
             }
 
         protected:
             size_t count_;
-            bool advance_;
+            AdvanceAction advance_act_;
             char_type* bufptr_;
             producer_consumer_buffer<char_type>& streambuf_;
             async_streambuf_op_base<char_type>* completion_op_;
@@ -605,8 +626,10 @@ namespace streams
         // being what the buffer is for in the first place). Thus, we have to protect
         // against some of the internal data elements against concurrent accesses
         // and the possibility of inconsistent states. A simple non-recursive lock
-        // should be sufficient for those purposes.
-        // pplx::extensibility::critical_section_t m_lock;
+        // should be sufficient for those purposes if the buffer is to be accessed from different threads.
+
+        // global lock in case of using the write_locked and read_locked functions
+        // lib::recursive_mutex mutex_;
 
         // Memory blocks
         std::deque<std::shared_ptr<mem_block>> blocks_;
@@ -614,8 +637,6 @@ namespace streams
         // Queue of requests
         std::queue<ev_request> requests_;
 
-        // global lock in case of using the write_locked and read_locked functions
-        // lib::recursive_mutex mutex_;
     };
 
 }} // namespaces
