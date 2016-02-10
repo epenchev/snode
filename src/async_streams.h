@@ -1417,8 +1417,8 @@ namespace streams
         /// Test whether the stream has been initialized or not.
         operator bool() const { return is_valid(); }
 
-        /// Test whether the stream is open for writing.
-        /// Returns> true if the stream is open for writing, false otherwise.
+        /// Test whether the stream is open for reading.
+        /// Returns> true if the stream is open for reading, false otherwise.
         bool is_open() const { return is_valid() && buffer_->can_read(); }
 
         /// Get the underlying stream buffer.

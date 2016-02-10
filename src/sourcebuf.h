@@ -193,6 +193,9 @@ public:
     /// has_size() is used to determine whether a stream buffer supports size().
     bool has_size() const { return this->is_open(); }
 
+    /// Gets the size (count characters) of the stream, if known.
+    size_t size() const { return source_.size(); }
+
     /// Gets the stream buffer size only for in direction otherwise 0 is returned.
     size_t buffer_size(std::ios_base::openmode direction = std::ios_base::in) const
     {

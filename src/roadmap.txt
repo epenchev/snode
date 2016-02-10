@@ -2,8 +2,8 @@ Project's roadmap (list of tasks by priority)
 
 ----- First beta release ------
 1. Clean/fix all TODO's into the streams package. (producer_consumer_buf, container_buf ...)
-2. Complete the media package (player's interface, media_filter interface and file_source implementation)
-3. Complete HTTP stack.
+2. Complete the media package (player's interface, source's interface, filter's interface and media database)
+3. Complete the HTTP stack.
 4. Create a simple HTTP media streamer for POF (HTTP progressive download).
 5. Add JSON library (use Casablanca for now).
 6. Add JSON controller to snode_core. Rearrange snode_core.
@@ -14,10 +14,15 @@ Project's roadmap (list of tasks by priority)
 
 ----- Second beta release -----
 1. Create simple web UI. (Use KODI's one)
-2. Improve player add ffmpeg support.
+2. Improve player add ffmpeg.Libavformat support for different media formats.
 3. Create HTTP media streamer (HTTP pseudo streaming).
-4. Add RTMP support.
-5. HTTPS support.
+4. Create freelock queue for the core system or use boost.lockfree
+5. Add RTMP support (client and server).
+6. HTTPS support and create general HTTP client.
+7. Add websocket support (websocketpp can be used).
+8. Add oauth2 support to be used for different REST services.
+9. Add google drive support (source).
+10. Add transcoding support (filter) ffmpeg.Libavfilter is the best option for now.
 
 
 

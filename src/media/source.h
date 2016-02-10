@@ -14,7 +14,6 @@ namespace snode
 namespace media
 {
 
-
 /// General source representation
 class source
 {
