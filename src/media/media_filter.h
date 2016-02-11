@@ -1,9 +1,24 @@
-// filter.h
+// media_filter.h
 // Copyright (C) 2016  Emil Penchev, Bulgaria
 
-#ifndef FILTER_H_
-#define FILTER_H_
+#ifndef MEDIA_FILTER_H_
+#define MEDIA_FILTER_H_
 
+namespace snode
+{
+namespace media
+{
 
+class media_filter
+{
+protected:
+    media_filter()
+    {}
+    virtual ~media_filter()
+    {}
+};
 
-#endif /* FILTER_H_ */
+} // end namespace media
+} // end namespace snode
+
+#endif /* MEDIA_FILTER_H_ */
