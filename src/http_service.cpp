@@ -634,7 +634,7 @@ void http_connection::handle_write_chunked_response(const http_response& respons
     {
         return handle_response_written(response, ec);
     }
-        
+
     auto readbuf = response.get_impl()->instream().streambuf();
     if (readbuf.is_eof())
     {

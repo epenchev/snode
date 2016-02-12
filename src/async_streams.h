@@ -141,7 +141,7 @@ namespace streams
     /// TChar is the data type of the basic element of the async_streambuf
     /// and TImpl is the actual buffer internal implementation.
     template<typename TChar, typename TImpl>
-    class async_streambuf
+    class async_streambuf : public std::enable_shared_from_this<async_streambuf<TChar,TImpl> >
     {
     public:
         typedef TChar char_type;
@@ -205,7 +205,7 @@ namespace streams
         {
             if (!can_read())
                 throw std::runtime_error("stream buffer not set up for input of data");
-            return istream_type(this);
+            return istream_type(this->shared_from_this());
         }
 
         /// Constructs an output stream for this stream buffer.
@@ -213,7 +213,7 @@ namespace streams
         {
             if (!can_write())
                 throw std::runtime_error("stream buffer not set up for output of data");
-            return ostream_type(this);
+            return ostream_type(this->shared_from_this());
         }
 
         /// can_seek() is used to determine whether a stream buffer supports seeking.
@@ -665,7 +665,7 @@ namespace streams
         };
 
         /// stream buffer object associated with this stream
-        streambuf_type* buffer_;
+        std::shared_ptr<streambuf_type> buffer_;
 
     public:
 
@@ -685,7 +685,7 @@ namespace streams
         }
 
         /// Constructor
-        async_ostream(streambuf_type* buffer) : buffer_(buffer)
+        async_ostream(std::shared_ptr<streambuf_type> buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_out_streambuf_msg);
         }
@@ -837,8 +837,12 @@ namespace streams
         bool is_open() const { return is_valid() && buffer_->can_write(); }
 
         /// Get the underlying stream buffer.
-        /// Returns the underlying stream buffer.
+        /// Returns a reference to the underlying stream buffer.
         streambuf_type& streambuf() { return *buffer_; }
+
+        /// Get a pointer to the underlying stream buffer.
+        /// Returns the underlying stream buffer.
+        std::shared_ptr<streambuf_type> streambuf_ptr() { return buffer_; }
     };
 
     /// Base class for all asynchronous input streams.
@@ -876,7 +880,7 @@ namespace streams
         };
 
         /// stream buffer object associated with this stream
-        streambuf_type* buffer_;
+        std::shared_ptr<streambuf_type> buffer_;
 
         /// async_istream's write completion handler to be executed
         /// when a write operation on a target buffer is complete.
@@ -1241,7 +1245,7 @@ namespace streams
         {}
 
         /// Constructor
-        async_istream(streambuf_type* buffer) : buffer_(buffer)
+        async_istream(std::shared_ptr<streambuf_type> buffer) : buffer_(buffer)
         {
             verify_and_throw(utils::s_in_streambuf_msg);
         }
@@ -1422,10 +1426,11 @@ namespace streams
         bool is_open() const { return is_valid() && buffer_->can_read(); }
 
         /// Get the underlying stream buffer.
-        streambuf_type& streambuf() const
-        {
-            return *buffer_;
-        }
+        streambuf_type& streambuf() const { return *buffer_; }
+
+        /// Get a pointer to the underlying stream buffer.
+        /// Returns the underlying stream buffer.
+        std::shared_ptr<streambuf_type> streambuf_ptr() { return buffer_; }
 
         /// Read a value of type T from the stream.
         /// Supports the C++ primitive types. Can be expanded to additional types

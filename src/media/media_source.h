@@ -25,36 +25,30 @@ public:
     typedef typename traits::pos_type pos_type;
     typedef typename traits::off_type off_type;
     typedef streams::async_streambuf<char_type, streams::sourcebuf<media_source> > streambuf_type;
-    typedef streambuf_type::istream_type stream_type;
     typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > live_streambuf_type;
-    typedef live_streambuf_type::istream_type live_stream_type;
-    typedef std::shared_ptr<streambuf_type> streambuf_type_ptr;
 
     /// Object of type async_istream to access the source data.
     /// For live data source live_istream() must be used instead.
-    stream_type& stream()
+    streambuf_type::istream_type& stream()
     {
-        if (!stream_.is_valid())
+        if (!istream_.is_valid())
         {
             if (!streambuf_)
                 streambuf_ = std::make_shared<streams::sourcebuf<media_source> >(this);
 
             if (streambuf_->can_read())
-                stream_ = streambuf_->create_istream();
+                istream_ = streambuf_->create_istream();
         }
-        return stream_;
+        return istream_;
     }
 
-    /// Object of type async_istream to access live data stream.
-    /// For static data source stream() must be used instead.
-    live_stream_type& live_stream()
+    /// Object of type async_istream to access the live data stream.
+    /// For static data stream() must be used instead.
+    /// Each time live_stream() is called a new async_streambuf is created for consuming
+    /// and is registered with the source.
+    live_streambuf_type::istream_type& live_stream()
     {
-        if (!live_stream_.is_valid())
-        {
-            if (live_streambuf().can_read())
-                live_stream_ = live_streambuf().create_istream();
-        }
-        return live_stream_;
+        return streambuf_func_(this)->create_istream();
     }
 
     /// Get source specific implementation
@@ -71,7 +65,7 @@ protected:
 
     typedef size_t (*size_func) (media_source* base);
     typedef void (*close_func)(media_source* base);
-    typedef live_streambuf_type& (*streambuf_func)(media_source* base);
+    typedef std::shared_ptr<live_streambuf_type> (*streambuf_func)(media_source* base);
     typedef size_t (*read_func)(media_source* base, char_type* ptr, size_t count, off_type offset);
 
     media_source(size_func sizefunc, close_func closefunc, read_func readfunc, streambuf_func streambuffunc)
@@ -85,10 +79,6 @@ protected:
     virtual ~media_source()
     {}
 
-    live_streambuf_type& live_streambuf()
-    {
-        return streambuf_func_(this);
-    }
 
     /// function bindings with implementation
     size_func  sizefunc_;
@@ -96,11 +86,8 @@ protected:
     read_func readfunc_;
     streambuf_func streambuf_func_;
 
-    // static data
-    streambuf_type_ptr streambuf_;
-    // streams
-    stream_type stream_;
-    live_stream_type live_stream_;
+    streambuf_type::istream_type istream_;
+    std::shared_ptr<streambuf_type> streambuf_;
 
 private:
     template<typename media_source> friend class streams::sourcebuf;
@@ -136,39 +123,39 @@ class source_impl : public media_source
 {
 public:
 
+    source_impl(TImpl& impl) :
+            media_source(&source_impl::size,
+                         &source_impl::close,
+                         &source_impl::read,
+                         &source_impl::live_streambuf), impl_(impl) {}
+
     /// Bridge for media_source::size()
     static size_t size(media_source* base)
     {
-        source_impl<TImpl>* sr(static_cast<source_impl<TImpl>*>(base));
-        return sr->impl_.size();
+        source_impl<TImpl>* source(static_cast<source_impl<TImpl>*>(base));
+        return source->impl_.size();
     }
 
     /// Bridge for media_source::read()
     static void read(media_source* base, char_type* ptr, size_t count, off_type offset)
     {
-        source_impl<TImpl>* sr(static_cast<source_impl<TImpl>*>(base));
-        sr->impl_.read(ptr, count, offset);
+        source_impl<TImpl>* source(static_cast<source_impl<TImpl>*>(base));
+        source->impl_.read(ptr, count, offset);
     }
 
     /// Bridge for media_source::close()
     static void close(media_source* base)
     {
-        source_impl<TImpl>* sr(static_cast<source_impl<TImpl>*>(base));
-        sr->impl_.close();
+        source_impl<TImpl>* source(static_cast<source_impl<TImpl>*>(base));
+        source->impl_.close();
     }
 
-    /// Bridge for source::streambuf()
-    static media_source::live_streambuf_type& streambuf(media_source* base)
+    static std::shared_ptr<media_source::live_streambuf_type>
+    live_streambuf(media_source* base)
     {
-        source_impl<TImpl>* sr(static_cast<source_impl<TImpl>*>(base));
-        return sr->impl_.streambuf();
+        source_impl<TImpl>* source(static_cast<source_impl<TImpl>*>(base));
+        return source->impl_.live_streambuf();
     }
-
-    source_impl(TImpl& impl) :
-        media_source(&source_impl::size,
-                     &source_impl::close,
-                     &source_impl::read,
-                     &source_impl::streambuf), impl_(impl) {}
 
     /// return the actual source implementation
     TImpl& impl() { return impl_; }

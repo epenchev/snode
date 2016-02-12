@@ -156,7 +156,7 @@ static std::string convert_body_to_string(const std::string& content_type, http_
         return std::string();
     }
 
-    http_msg_base::streambuf_type streambuf = instream.streambuf();
+    auto streambuf = instream.streambuf();
 
     assert(streambuf.is_open());
     assert(streambuf.can_read());

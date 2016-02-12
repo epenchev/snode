@@ -25,13 +25,10 @@ class media_player
 public:
     typedef std::shared_ptr<media_source> source_ptr;
     typedef std::shared_ptr<media_filter> filter_ptr;
-    typedef media_source::stream_type stream_type;
-    typedef media_source::live_stream_type live_stream_type;
     typedef media_source::off_type off_type;
+    typedef media_source::streambuf_type::istream_type stream_type;
 
-    media_player(const std::string& name, source_ptr sr, filter_ptr fl = nullptr)
-      : source_(sr), filter_(fl), databuf_(1024)
-    {}
+    media_player(const std::string& name, source_ptr source, filter_ptr filter = nullptr);
 
     virtual ~media_player()
     {}
@@ -57,14 +54,13 @@ public:
     /// Get the name of the stream.
     const std::string& name() const;
 
-    /// Get player's stream
-    stream_type& stream() { return stream_; }
-
-    /// Get player's livestream
-    live_stream_type& live_stream() { return live_stream_; }
+    /// Get player's async_istream
+    stream_type& stream();
 
 private:
     template<typename media_player> friend class streams::sourcebuf;
+    typedef media_source::char_type char_type;
+    typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > playerbuf_type;
 
     /// Internal program interface to be used only from sourcebuf
     /// media_player is complying with SourceImpl interface
@@ -75,12 +71,13 @@ private:
     void read_handler(size_t count);
     void read_handler_live(size_t count);
 
-    std::string name_;
-    stream_type stream_;
-    live_stream_type live_stream_;
-    source_ptr source_;
-    filter_ptr filter_;
-    std::vector<media_source::char_type> databuf_;
+
+    playerbuf_type playerbuf_;          // player's internal stream buffer
+    source_ptr source_;                 // Source object representing the stream.
+    filter_ptr filter_;                 // Filter object if transformation must is to be done before playing.
+    std::string name_;                  // Name of the stream we are playing.
+    stream_type instream_;              // async_istream to read from the source.
+    media_source::live_streambuf_type::istream_type instreamlive_;   // Live async_istream to read data from.
 };
 
 /// Stores all active players and creates new ones for a given media stream.
