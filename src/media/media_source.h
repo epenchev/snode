@@ -9,6 +9,7 @@
 #include <string>
 #include <memory>
 #include "sourcebuf.h"
+#include "async_streams.h"
 
 namespace snode
 {
@@ -21,34 +22,33 @@ class media_source
 public:
     typedef unsigned char char_type;
     typedef std::char_traits<char_type> traits;
-    typedef typename traits::int_type int_type;
     typedef typename traits::pos_type pos_type;
     typedef typename traits::off_type off_type;
     typedef streams::async_streambuf<char_type, streams::sourcebuf<media_source> > streambuf_type;
     typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > live_streambuf_type;
+    typedef streambuf_type::istream_type stream_type;
+    typedef live_streambuf_type::istream_type livestream_type;
 
     /// Object of type async_istream to access the source data.
     /// For live data source live_istream() must be used instead.
-    streambuf_type::istream_type& stream()
+    stream_type& stream()
     {
-        if (!istream_.is_valid())
+        if (!stream_.is_open())
         {
-            if (!streambuf_)
-                streambuf_ = std::make_shared<streams::sourcebuf<media_source> >(this);
-
-            if (streambuf_->can_read())
-                istream_ = streambuf_->create_istream();
+            auto buf = std::make_shared<streams::sourcebuf<media_source> >(this);
+            if (buf->can_read())
+                stream_ = buf->create_istream();
         }
-        return istream_;
+        return stream_;
     }
 
     /// Object of type async_istream to access the live data stream.
     /// For static data stream() must be used instead.
-    /// Each time live_stream() is called a new async_streambuf is created for consuming
-    /// and is registered with the source.
-    live_streambuf_type::istream_type& live_stream()
+    livestream_type& live_stream()
     {
-        return streambuf_func_(this)->create_istream();
+        if (!streamlive_.is_open())
+            streamlive_ = livestream_func_(this);
+        return streamlive_;
     }
 
     /// Get source specific implementation
@@ -65,29 +65,27 @@ protected:
 
     typedef size_t (*size_func) (media_source* base);
     typedef void (*close_func)(media_source* base);
-    typedef std::shared_ptr<live_streambuf_type> (*streambuf_func)(media_source* base);
     typedef size_t (*read_func)(media_source* base, char_type* ptr, size_t count, off_type offset);
+    typedef live_streambuf_type::istream_type (*live_stream_func)(media_source* base);
 
-    media_source(size_func sizefunc, close_func closefunc, read_func readfunc, streambuf_func streambuffunc)
+    media_source(size_func sizefunc, close_func closefunc, read_func readfunc, live_stream_func livestreamfunc)
         : sizefunc_(sizefunc),
           closefunc_(closefunc),
           readfunc_(readfunc),
-          streambuf_func_(streambuffunc),
-          streambuf_(std::nullptr_t)
+          livestream_func_(livestreamfunc)
     {}
 
     virtual ~media_source()
     {}
 
-
     /// function bindings with implementation
     size_func  sizefunc_;
     close_func closefunc_;
     read_func readfunc_;
-    streambuf_func streambuf_func_;
+    live_stream_func livestream_func_;
 
-    streambuf_type::istream_type istream_;
-    std::shared_ptr<streambuf_type> streambuf_;
+    stream_type stream_;
+    livestream_type streamlive_;
 
 private:
     template<typename media_source> friend class streams::sourcebuf;
@@ -122,12 +120,11 @@ template<typename TImpl>
 class source_impl : public media_source
 {
 public:
-
     source_impl(TImpl& impl) :
             media_source(&source_impl::size,
                          &source_impl::close,
                          &source_impl::read,
-                         &source_impl::live_streambuf), impl_(impl) {}
+                         &source_impl::live_istream), impl_(impl) {}
 
     /// Bridge for media_source::size()
     static size_t size(media_source* base)
@@ -150,11 +147,12 @@ public:
         source->impl_.close();
     }
 
-    static std::shared_ptr<media_source::live_streambuf_type>
-    live_streambuf(media_source* base)
+    /// Bridge for media_source::live_stream()
+    static live_streambuf_type::istream_type
+    live_istream(media_source* base)
     {
         source_impl<TImpl>* source(static_cast<source_impl<TImpl>*>(base));
-        return source->impl_.live_streambuf();
+        return source->impl_.live_stream();
     }
 
     /// return the actual source implementation

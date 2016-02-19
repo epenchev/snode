@@ -26,7 +26,10 @@ public:
     typedef std::shared_ptr<media_source> source_ptr;
     typedef std::shared_ptr<media_filter> filter_ptr;
     typedef media_source::off_type off_type;
-    typedef media_source::streambuf_type::istream_type stream_type;
+    typedef media_source::char_type char_type;
+    typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > streambuf_type;
+    typedef streambuf_type::istream_type stream_type;
+    static const size_t buf_size = 16*1024;
 
     media_player(const std::string& name, source_ptr source, filter_ptr filter = nullptr);
 
@@ -48,36 +51,39 @@ public:
     void record(const std::string& filepath);
 
     /// Seek to a specific time (in seconds) in the stream.
-    /// Only valid if this is multimedia stream and is not live.
+    /// Only valid if this is multi-media stream and is not live.
     void seek(float ts);
+
+    /// Seek to a specific location (in bytes) in to the stream.
+    /// Only valid if stream is not live.
+    void seek(off_type offset);
 
     /// Get the name of the stream.
     const std::string& name() const;
 
-    /// Get player's async_istream
-    stream_type& stream();
+    /// Get player's stream
+    stream_type stream();
 
 private:
     template<typename media_player> friend class streams::sourcebuf;
     typedef media_source::char_type char_type;
-    typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > playerbuf_type;
+    typedef streams::async_streambuf<char_type, streams::producer_consumer_buffer<char_type> > streambuf_type;
 
     /// Internal program interface to be used only from sourcebuf
     /// media_player is complying with SourceImpl interface
     size_t read(media_source::char_type* ptr, size_t count, off_type offset = -1);
-    size_t size() const;
+    size_t size();
     void close() {}
 
     void read_handler(size_t count);
     void read_handler_live(size_t count);
 
-
-    playerbuf_type playerbuf_;          // player's internal stream buffer
-    source_ptr source_;                 // Source object representing the stream.
-    filter_ptr filter_;                 // Filter object if transformation must is to be done before playing.
-    std::string name_;                  // Name of the stream we are playing.
-    stream_type instream_;              // async_istream to read from the source.
-    media_source::live_streambuf_type::istream_type instreamlive_;   // Live async_istream to read data from.
+    streambuf_type streambuf_;                   // player's internal stream buffer
+    source_ptr source_;                          // Source object.
+    filter_ptr filter_;                          // Filter object to process source data if specified.
+    std::string name_;                           // Name of the stream we are playing.
+    media_source::stream_type stream_;           // async_istream instance to read data from the source.
+    media_source::livestream_type streamlive_;   // async_istream instance to read live data from the source.
 };
 
 /// Stores all active players and creates new ones for a given media stream.
@@ -86,15 +92,16 @@ class player_factory
 public:
     typedef std::shared_ptr<media_player> player_ptr;
 
-    /// Factory for registering a media source class.
+    /// Factory for registering a media source.
     typedef reg_factory<media_source> source_factory;
-    /// Factory for registering a media filter class.
+
+    /// Factory for registering a media filter.
     typedef reg_factory<media_filter> filter_factory;
 
-    /// Factory method, create a new player for a given stream or return an already created.
-    /// If player can't be created nullptr is returned
-    player_ptr create(const std::string& name, const std::string& source_class,
-                      const std::string& filter_class = "", const std::string& filter_options = "");
+    /// Factory method, create a new player for a given stream.
+    /// If player can't be created NULL is returned instead.
+    player_ptr create(const std::string& name, const std::string& sourcetype,
+                      const std::string& filtertype = "", const std::string& filter_opt = "");
 
 private:
     /// stores the stream name -> player relationship
