@@ -92,7 +92,7 @@ namespace streams
         typedef void (*func_size_type)(async_streambuf_op_base*, std::size_t);
 
         async_streambuf_op_base(func_ch_type func_ch, func_size_type func_size)
-         : func_ch_(func_ch), func_size_(func_size)
+            : func_ch_(func_ch), func_size_(func_size)
         {}
 
     private:
@@ -601,74 +601,10 @@ namespace streams
                 throw std::runtime_error(msg);
         }
 
-        /// async_ostream's write completion handler to be executed
-        /// when a write operation on the underlying buffer is complete.
-        /// Template parameter THandler is the user supplied handler, to be executed
-        /// when write() to the async_ostream object is complete.
-        template<typename THandler>
-        struct write_handler
-        {
-            write_handler(THandler handler) : handler_(handler)
-            {}
-
-            template<typename TBufSc>
-            void on_write(size_t count, TBufSc* sourcebuf)
-            {
-                char_type* data;
-                sourcebuf->acquire(data, count);
-                if (data != nullptr)
-                    sourcebuf->release(data, count);
-                // execute user's completion handler
-                handler_(count);
-            }
-
-            THandler handler_;
-        };
-
-        /// async_ostream's read completion handler to be executed
-        /// when a read operation on a source buffer is complete.
-        /// Template parameter THandler is the user supplied handler, to be executed
-        /// when write() to the async_ostream object is complete.
-        template<typename THandler>
-        struct read_handler
-        {
-            read_handler(THandler handler) : handler_(handler)
-            {}
-
-            void on_read(size_t count, streambuf_type* sbuf, std::shared_ptr<char_type> buf)
-            {
-                if (count)
-                {
-                    char_type* data;
-                    const bool acquired = sbuf->acquire(data, count);
-                    // data is already allocated in the source, just committing.
-                    if (acquired)
-                    {
-                        sbuf->commit(count);
-                        handler_(count);
-                    }
-                    else if (buf)
-                    {
-                        sbuf->putn(buf.get(), count,
-                          std::bind(&read_handler<THandler>::on_write, *this, count, buf));
-                    }
-                }
-            }
-
-            void on_write(size_t count, std::shared_ptr<char_type> buf)
-            {
-                // execute user's completion handler and release buf
-                handler_(count);
-            }
-
-            THandler handler_;
-        };
-
         /// stream buffer object associated with this stream
         std::shared_ptr<streambuf_type> buffer_;
 
     public:
-
         /// Default constructor
         async_ostream() : buffer_(nullptr)
         {}
@@ -722,12 +658,17 @@ namespace streams
             if (count == 0)
                 return;
 
+            auto op = new async_streambuf_op<char_type, THandler>(handler);
+
             auto data = buffer_->alloc(count);
             if ( data != nullptr )
             {
-                read_handler<THandler> completion_handler(handler);
-                sourcebuf.getn(data, count,
-                  std::bind(&read_handler<THandler>::on_read, completion_handler, std::placeholders::_1, buffer_, nullptr));
+                auto post_read = [this, op](size_t count)
+                {
+                    this->buffer_->commit(count);
+                    op->complete_size(count);
+                };
+                sourcebuf.getn(data, count, post_read);
             }
             else
             {
@@ -735,9 +676,13 @@ namespace streams
                 const bool acquired = sourcebuf.acquire(data, available);
                 if ( available >= count )
                 {
-                    write_handler<THandler> completion_handler(handler);
-                    buffer_->putn(data, count,
-                      std::bind(&write_handler<THandler>::on_write, completion_handler, std::placeholders::_1, sourcebuf));
+                    auto post_write = [sourcebuf, data, op](size_t count)
+                    {
+                        if (data != nullptr)
+                            sourcebuf->release(data, count);
+                        op->complete_size(count);
+                    };
+                    buffer_->putn(data, count, post_write);
                 }
                 else
                 {
@@ -745,10 +690,16 @@ namespace streams
                     if (acquired)
                         sourcebuf.release(data, 0);
 
-                    auto buf = std::make_shared<char_type>((size_t)count);
-                    read_handler<THandler> completion_handler(handler);
-                    sourcebuf.getn(buf.get(), count,
-                      std::bind(&read_handler<THandler>::on_read, completion_handler, std::placeholders::_1, buffer_, buf));
+                    auto data = std::make_shared<char_type>((size_t)count);
+                    auto post_read = [this, data, op](size_t count)
+                    {
+                        auto post_write = [data, op](size_t count)
+                        {
+                            op->complete_size(count);
+                        };
+                        this->buffer_->putn(data.get(), count, post_write);
+                    };
+                    sourcebuf.getn(data.get(), count, post_read);
                 }
             }
         }
